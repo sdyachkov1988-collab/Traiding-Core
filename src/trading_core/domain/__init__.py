@@ -5,6 +5,7 @@ from trading_core.domain.context import MarketContext
 from trading_core.domain.execution import AdmittedOrder, ExecutionReport, ExecutionReportKind
 from trading_core.domain.events import EventKind, MarketEvent
 from trading_core.domain.fills import Fill
+from trading_core.domain.gate import GateOutcome, GateVerdict
 from trading_core.domain.guards import ExecutionAdmissibilityBasis, GuardOutcome, GuardVerdict
 from trading_core.domain.instruments import ExecutionConstraintBasis, InstrumentExecutionSpec
 from trading_core.domain.orders import OrderIntent, OrderSide, OrderType, TimeInForce
@@ -36,6 +37,8 @@ __all__ = [
     "ExternalStartupBasis",
     "ExternalStartupPosition",
     "Fill",
+    "GateOutcome",
+    "GateVerdict",
     "GuardOutcome",
     "GuardVerdict",
     "InstrumentRef",
