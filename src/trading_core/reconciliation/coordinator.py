@@ -71,4 +71,5 @@ class RecoveryCoordinator:
             instrument_id=outcome.instrument_id or "unknown",
             reason=outcome.reason or "reconciliation_conflict_with_active_trading",
         )
+        self.classifier.apply_transition(transition)
         return transition

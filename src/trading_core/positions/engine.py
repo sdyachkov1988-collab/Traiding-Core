@@ -20,18 +20,19 @@ class SpotPositionEngine:
         position = current or Position.empty(instrument=fill.instrument)
         if fill.side is OrderSide.BUY:
             new_quantity = position.quantity + fill.quantity
-            if new_quantity == Decimal("0"):
-                average_entry_price = Decimal("0")
-            else:
-                total_cost = (
-                    position.quantity * position.average_entry_price
-                    + fill.quantity * fill.price
-                    + fill.fee
-                )
-                average_entry_price = total_cost / new_quantity
+            if new_quantity <= Decimal("0"):
+                raise AssertionError("buy_fill_must_increase_position_quantity")
+            total_cost = (
+                position.quantity * position.average_entry_price
+                + fill.quantity * fill.price
+                + fill.fee
+            )
+            average_entry_price = total_cost / new_quantity
             realized_pnl = position.realized_pnl
         else:
-            closed_quantity = min(position.quantity, fill.quantity)
+            if fill.quantity > position.quantity:
+                raise ValueError("sell_fill_exceeds_current_position_quantity")
+            closed_quantity = fill.quantity
             realized_pnl = position.realized_pnl + (
                 (fill.price - position.average_entry_price) * closed_quantity
             ) - fill.fee
@@ -43,7 +44,7 @@ class SpotPositionEngine:
         return Position(
             position_id=position.position_id,
             instrument=position.instrument,
-            quantity=max(new_quantity, Decimal("0")),
+            quantity=new_quantity,
             average_entry_price=average_entry_price,
             realized_pnl=realized_pnl,
             updated_at=fill.executed_at,

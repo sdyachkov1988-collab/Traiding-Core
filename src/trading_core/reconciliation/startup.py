@@ -17,6 +17,8 @@ from trading_core.domain.state import PersistedStateSnapshot
 class SimpleStartupReconciler:
     """Perform startup-only comparison between local and external state."""
 
+    # `0` means exact Decimal equality is required. Any non-zero tolerance must
+    # be chosen explicitly by the caller; there is no implicit fuzzy matching.
     cash_tolerance: Decimal = Decimal("0")
     quantity_tolerance: Decimal = Decimal("0")
 

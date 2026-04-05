@@ -17,6 +17,7 @@ class InstrumentExecutionSpec:
     price_step: Decimal
     supported_order_types: tuple[OrderType, ...]
     supported_time_in_force: tuple[TimeInForce, ...]
+    min_order_quantity: Decimal = Decimal("0")
     default_order_type: OrderType = OrderType.LIMIT
     default_time_in_force: TimeInForce = TimeInForce.GTC
 

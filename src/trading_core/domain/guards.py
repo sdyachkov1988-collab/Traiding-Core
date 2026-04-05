@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import Mapping
 
 from trading_core.domain.orders import OrderType, TimeInForce
-from trading_core.domain.common import new_internal_id, utc_now
+from trading_core.domain.common import new_internal_id, require_utc_datetime, utc_now
 
 
 class GuardVerdict(StrEnum):
@@ -43,6 +43,9 @@ class GuardOutcome:
     reason: str | None
     checked_at: datetime
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.checked_at, "checked_at")
 
     @classmethod
     def create(

@@ -106,3 +106,30 @@ def test_startup_reconciler_flags_position_quantity_mismatch() -> None:
 
     assert result.verdict == StartupReconciliationVerdict.MISMATCHED
     assert result.reason == "position_quantity_mismatch"
+
+
+def test_startup_reconciler_matches_when_closed_position_is_absent_from_local_snapshot() -> None:
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    position = Position.empty(instrument=instrument)
+    portfolio = PortfolioState(
+        portfolio_state_id="portfolio_2",
+        cash_balance=Decimal("1000"),
+        realized_pnl=Decimal("1.0"),
+        positions={},
+        updated_at=position.updated_at,
+        metadata={"env": "paper"},
+    )
+    snapshot = PersistedStateSnapshot.create(portfolio_state=portfolio)
+    external = ExternalStartupBasis.create(
+        cash_balance=Decimal("1000"),
+        positions={},
+    )
+
+    result = SimpleStartupReconciler().reconcile(snapshot, external)
+
+    assert result.verdict == StartupReconciliationVerdict.MATCHED
+    assert result.reason is None

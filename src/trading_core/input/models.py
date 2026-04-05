@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Mapping
 
 
@@ -16,6 +17,7 @@ class RawMarketEvent:
     event_kind: str
     source: str
     payload: Mapping[str, str]
+    source_event_time: datetime | None = None
     market_type: str = "spot"
     metadata: Mapping[str, str] = field(default_factory=dict)
 

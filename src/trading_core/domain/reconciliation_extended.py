@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from trading_core.domain.common import new_internal_id, utc_now
-from trading_core.domain.reconciliation import StartupReconciliationVerdict
+from trading_core.domain.common import new_internal_id, require_utc_datetime, utc_now
 
 
 class ReconciliationMode(StrEnum):
@@ -27,6 +26,13 @@ class ReconciliationTrigger(StrEnum):
     OPERATOR_COMMAND = "operator_command"
 
 
+class ReconciliationVerdict(StrEnum):
+    """Loop-level reconciliation verdict without startup-only missing-state semantics."""
+
+    MATCHED = "matched"
+    MISMATCHED = "mismatched"
+
+
 @dataclass(frozen=True, slots=True)
 class ReconciliationRequest:
     """Formal reconciliation request across startup, periodic, and on-error modes."""
@@ -36,6 +42,9 @@ class ReconciliationRequest:
     trigger: ReconciliationTrigger
     instrument_id: str | None
     requested_at: datetime
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.requested_at, "requested_at")
 
     @classmethod
     def create(
@@ -63,11 +72,14 @@ class ReconciliationOutcome:
     outcome_id: str
     request_id: str
     mode: ReconciliationMode
-    verdict: StartupReconciliationVerdict
+    verdict: ReconciliationVerdict
     instrument_id: str | None
     conflicts_with_active_trading: bool
     reason: str | None
     resolved_at: datetime
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.resolved_at, "resolved_at")
 
     @classmethod
     def create(
@@ -75,7 +87,7 @@ class ReconciliationOutcome:
         *,
         request_id: str,
         mode: ReconciliationMode,
-        verdict: StartupReconciliationVerdict,
+        verdict: ReconciliationVerdict,
         instrument_id: str | None = None,
         conflicts_with_active_trading: bool,
         reason: str | None = None,

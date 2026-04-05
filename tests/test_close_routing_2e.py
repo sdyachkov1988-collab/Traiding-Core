@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from trading_core.contracts.close_router import CloseIntentRouterProtocol
@@ -104,6 +104,7 @@ def test_valid_close_intent_is_admitted_by_router() -> None:
 
     result = router.route(
         close_intent=close_intent,
+        current_position_quantity=Decimal("0.10"),
         instrument_spec=permissive_builder_spec(),
         execution_basis=execution_basis(),
         admissibility_basis=admissibility_basis(),
@@ -124,6 +125,7 @@ def test_invalid_close_quantity_triggers_safe_mode_path() -> None:
 
     result = router.route(
         close_intent=close_intent,
+        current_position_quantity=Decimal("0.20"),
         instrument_spec=permissive_builder_spec(),
         execution_basis=execution_basis(),
         admissibility_basis=admissibility_basis(),
@@ -148,6 +150,7 @@ def test_guard_reject_never_results_in_silent_failure() -> None:
 
     result = router.route(
         close_intent=close_intent,
+        current_position_quantity=Decimal("0.001"),
         instrument_spec=permissive_builder_spec(),
         execution_basis=execution_basis(),
         admissibility_basis=admissibility_basis(),
@@ -171,6 +174,7 @@ def test_close_routing_result_preserves_lineage() -> None:
 
     result = router.route(
         close_intent=close_intent,
+        current_position_quantity=Decimal("0.10"),
         instrument_spec=permissive_builder_spec(),
         execution_basis=execution_basis(),
         admissibility_basis=admissibility_basis(),
@@ -190,6 +194,7 @@ def test_router_classifies_unknown_state_after_guard_reject() -> None:
 
     result = router.route(
         close_intent=close_intent,
+        current_position_quantity=Decimal("0.20"),
         instrument_spec=permissive_builder_spec(),
         execution_basis=execution_basis(),
         admissibility_basis=admissibility_basis(),
@@ -204,3 +209,41 @@ def test_close_intent_router_matches_protocol() -> None:
     router, _ = router_with_classifier()
 
     assert isinstance(router, CloseIntentRouterProtocol)
+
+
+def test_close_router_triggers_safe_mode_when_no_position_is_available() -> None:
+    router, classifier = router_with_classifier()
+    close_intent = CloseIntent.create(
+        instrument=instrument(),
+        position_id="pos_123",
+        quantity=Decimal("0.10"),
+        reason="protective_close",
+    )
+
+    result = router.route(
+        close_intent=close_intent,
+        current_position_quantity=Decimal("0"),
+        instrument_spec=permissive_builder_spec(),
+        execution_basis=execution_basis(),
+        admissibility_basis=admissibility_basis(),
+    )
+
+    assert result.verdict == CloseRoutingVerdict.SAFE_MODE_TRIGGERED
+    assert result.reason == "no_position_to_close"
+    assert classifier.current_mode == SystemMode.SAFE_MODE
+
+
+def test_close_intent_rejects_naive_created_at_datetime() -> None:
+    try:
+        CloseIntent(
+            intent_id="close_123",
+            instrument=instrument(),
+            position_id="pos_123",
+            quantity=Decimal("0.10"),
+            reason="protective_close",
+            created_at=datetime(2026, 1, 1, 12, 0, 0),
+        )
+    except ValueError as exc:
+        assert str(exc) == "created_at must be timezone-aware UTC"
+    else:
+        raise AssertionError("Expected naive created_at to be rejected")

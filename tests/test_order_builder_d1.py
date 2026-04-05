@@ -49,8 +49,9 @@ def build_approved_decision():
             quantity_step=Decimal("0.01"),
         ),
         portfolio_basis=PortfolioRiskBasis(
-            available_capital=Decimal("5.00"),
-            max_capital_per_trade=Decimal("2.00"),
+            available_capital=Decimal("500.00"),
+            max_capital_per_trade=Decimal("250.00"),
+            reference_price=Decimal("105.00"),
         ),
     )
 
@@ -65,6 +66,7 @@ def test_order_builder_builds_only_order_intent_from_approved_decision() -> None
             instrument_id="btc-usdt",
             quantity_step=Decimal("0.01"),
             price_step=Decimal("0.10"),
+            min_order_quantity=Decimal("0.01"),
             supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
             supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
         ),
@@ -78,7 +80,7 @@ def test_order_builder_builds_only_order_intent_from_approved_decision() -> None
     assert order_intent.order_type == OrderType.LIMIT
     assert order_intent.time_in_force == TimeInForce.GTC
     assert order_intent.limit_price == Decimal("105.20")
-    assert order_intent.quantity == Decimal("0.10")
+    assert order_intent.quantity == Decimal("0.11")
 
 
 def test_order_builder_rejects_non_approved_decision() -> None:
@@ -99,6 +101,7 @@ def test_order_builder_rejects_non_approved_decision() -> None:
                 instrument_id="btc-usdt",
                 quantity_step=Decimal("0.01"),
                 price_step=Decimal("0.10"),
+                min_order_quantity=Decimal("0.01"),
                 supported_order_types=(OrderType.LIMIT,),
                 supported_time_in_force=(TimeInForce.GTC,),
             ),
@@ -117,6 +120,7 @@ def test_order_builder_validates_instrument_match() -> None:
                 instrument_id="eth-usdt",
                 quantity_step=Decimal("0.01"),
                 price_step=Decimal("0.10"),
+                min_order_quantity=Decimal("0.01"),
                 supported_order_types=(OrderType.LIMIT,),
                 supported_time_in_force=(TimeInForce.GTC,),
             ),
@@ -142,6 +146,7 @@ def test_order_builder_accepts_capped_decision_and_builds_order_intent() -> None
             instrument_id="btc-usdt",
             quantity_step=Decimal("0.01"),
             price_step=Decimal("0.10"),
+            min_order_quantity=Decimal("0.01"),
             supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
             supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
         ),
@@ -152,3 +157,32 @@ def test_order_builder_accepts_capped_decision_and_builds_order_intent() -> None
     )
 
     assert order_intent.quantity == Decimal("0.05")
+
+
+def test_order_builder_rejects_quantity_that_falls_below_min_after_rounding() -> None:
+    decision = build_approved_decision()
+    builder = SimpleOrderIntentBuilder()
+    rounded_below_min = type(decision).create(
+        verdict=RiskVerdict.APPROVED,
+        strategy_intent_id=decision.strategy_intent_id,
+        instrument=decision.instrument,
+        side=decision.side,
+        approved_quantity=Decimal("0.019"),
+    )
+
+    with pytest.raises(ValueError, match="Rounded quantity fell below instrument minimum quantity"):
+        builder.build(
+            decision=rounded_below_min,
+            instrument_spec=InstrumentExecutionSpec(
+                instrument_id="btc-usdt",
+                quantity_step=Decimal("0.01"),
+                price_step=Decimal("0.10"),
+                min_order_quantity=Decimal("0.015"),
+                supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
+                supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
+            ),
+            execution_basis=ExecutionConstraintBasis(
+                reference_price=Decimal("105.00"),
+                preferred_limit_offset=Decimal("0.20"),
+            ),
+        )

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from trading_core.domain.context import MarketContext
+from trading_core.context.store import InstrumentTimeframeStore
+from trading_core.domain.common import InstrumentRef
+from trading_core.domain.context import MarketContext, Wave1MtfContext
 from trading_core.domain.events import MarketEvent
 
 
@@ -32,4 +34,45 @@ class SimpleMarketContextAssembler:
             readiness_flags=readiness_flags,
             alignment_policy=self.alignment_policy,
             metadata={"source_event_id": event.event_id},
+        )
+
+
+@dataclass(slots=True)
+class Wave1MtfContextAssembler:
+    """Assemble a minimal Wave 1 MTF input object from canonical stored bars."""
+
+    instrument: InstrumentRef
+    store: InstrumentTimeframeStore
+    entry_timeframe: str = "15m"
+    trend_timeframe: str = "1h"
+
+    def assemble(self) -> Wave1MtfContext:
+        """Return the phase-scoped MTF input used by the active Wave 1 path."""
+
+        entry_bar = self.store.get_bar(self.entry_timeframe)
+        trend_bar = self.store.get_bar(self.trend_timeframe)
+        readiness_flags = {
+            "entry_ready": entry_bar is not None,
+            "trend_ready": trend_bar is not None,
+            "context_ready": entry_bar is not None and trend_bar is not None,
+        }
+        closed_bar_only = all(
+            bar is not None and bar.is_closed is True
+            for bar in (entry_bar, trend_bar)
+        )
+        no_lookahead_safe = (
+            entry_bar is not None
+            and trend_bar is not None
+            and trend_bar.bar_time <= entry_bar.bar_time
+        )
+        return Wave1MtfContext.create(
+            instrument_id=self.instrument.instrument_id,
+            entry_timeframe=self.entry_timeframe,
+            trend_timeframe=self.trend_timeframe,
+            entry_bar=entry_bar,
+            trend_bar=trend_bar,
+            closed_bar_only=closed_bar_only,
+            no_lookahead_safe=no_lookahead_safe,
+            readiness_flags=readiness_flags,
+            metadata={"instrument_symbol": self.instrument.symbol},
         )

@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping
 
-from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+from trading_core.domain.common import InstrumentRef, new_internal_id, require_utc_datetime, utc_now
 from trading_core.domain.orders import OrderSide
 
 
@@ -24,6 +24,9 @@ class StrategyIntent:
     strategy_name: str
     context_id: str
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.created_at, "created_at")
 
     @classmethod
     def create(
@@ -64,6 +67,9 @@ class NoAction:
     created_at: datetime
     strategy_name: str
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.created_at, "created_at")
 
     @classmethod
     def create(

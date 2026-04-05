@@ -57,8 +57,9 @@ def build_admitted_order() -> AdmittedOrder:
             quantity_step=Decimal("0.01"),
         ),
         portfolio_basis=PortfolioRiskBasis(
-            available_capital=Decimal("5.00"),
-            max_capital_per_trade=Decimal("2.00"),
+            available_capital=Decimal("500.00"),
+            max_capital_per_trade=Decimal("250.00"),
+            reference_price=Decimal("105.00"),
         ),
     )
     order_intent = builder.build(

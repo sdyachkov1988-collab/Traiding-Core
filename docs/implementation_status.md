@@ -2,104 +2,100 @@
 
 ## Current status
 
-`Minimal Core v1` currently has a working vertical slice covering:
+The repository now contains two layers of reality:
 
-- `Package A` - Input and Context Foundation
-- `Package B` - Strategy Decision Boundary
-- `Package C` - Risk Verdict Boundary
-- `Package D` - Order Builder and Pre-execution Guard
-- `Package E` - Execution Boundary
-- `Package F` - Fill-driven state spine
-- `Package G` - State Store and Startup Reconciliation
+- a closed and remediated `Minimal Core v1` vertical slice;
+- explicit next-stage seams from Tracks B and C that are present in code but not automatically promoted into the canonical Wave 1 contour.
 
-In practical terms, the current repository supports the following phased path:
+Closed Wave 1 slice:
 
-`MarketEvent -> MarketContext -> StrategyIntent/NoAction -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+- `Package A` - normalized input and early context seam
+- `Package B` - strategy decision boundary
+- `Package C` - risk verdict boundary
+- `Package D` - order builder and pre-execution guard
+- `Package E` - execution boundary
+- `Package F` - fill-driven state spine
+- `Package G` - local state store and startup reconciliation
 
-This document records implementation status only. It does not redefine the canonical model and does not upgrade temporary first-build choices into permanent invariants.
+## Active acceptance path
 
-## Closed scope for Minimal Core v1
+The active acceptance path is now `MTF-first` and phase-correct for Wave 1:
 
-The following are currently considered closed for the first vertical slice:
+`market input -> Wave1MtfContext -> MTF strategy -> risk -> builder -> guard -> execution -> fill -> position -> portfolio -> state -> startup reconciliation`
 
-- normalized input seam
-- early strategy-facing context seam
-- strategy decision seam
-- separate risk verdict seam
-- order construction seam
-- pre-execution guard seam
-- execution boundary as a single adapter-facing point
-- internal fill-driven truth spine
-- local state persistence
-- startup-only reconciliation
+This is intentionally narrower than the full Wave 2 context family.
 
-## Reserved seams outside active scope
+Meaning:
 
-The following seams remain visible in the model but are not yet in active implementation scope:
+- the active path no longer uses the legacy single-bar strategy;
+- the strategy receives `entry timeframe + mandatory HTF input` through the core;
+- the active Wave 1 contour does not require full `TimeframeContext + ContextGate` canonization.
 
-- full `TimeframeContext` family
-- `Context Gate`
-- periodic reconciliation
-- on-error reconciliation
-- unknown-state family
-- mature recovery coordinator
-- protective close loop
-- full `OrderState / ExecutionEvent` family
-- full `Balance / AccountState` family
-- governance-layer decisions
+## Implemented next-stage seams
 
-These remain reserved seams rather than missing code by accident. Their absence is phase-aligned with the current roadmap boundary.
+The following seams now exist in the repository as explicit next-stage capability:
 
-## Assembly-level choices that are not canonical invariants
+- canonical timeframe store and `TimeframeContext`
+- `ContextGate`
+- unknown-state classification and system modes
+- recovery coordinator with startup / periodic / on-error request modes
+- position-originated close routing contour
 
-Some implementation details in the current slice are explicitly temporary assembly-level choices and must not be read as permanent core invariants.
+These are implemented and test-covered, but they should still be interpreted through the roadmap boundary, not treated as if they were always part of the original Wave 1 contour.
 
-Current examples:
+## Track A and Track B remediation outcomes
 
-- snapshot metadata records `accounting_policy = assembly_level_fee_in_cost_basis`
-- `IdempotentFillProcessor` exists as a local protective implementation detail, not as a claim that the hardening layer is already complete
-- first-build execution adapter behavior is represented by a mock boundary implementation, not by a mature production execution family
+The repository also reflects the completed remediation steps from Tracks A and B:
 
-Rule of interpretation:
+- risk sizing uses `reference_price` and step-aligned base sizing
+- spot `SELL` requires a real current position basis
+- impossible oversell is explicit conflict instead of silent clipping
+- zero-quantity zombie positions are removed from portfolio truth
+- builder rechecks quantity after post-rounding alignment
+- acceptance uses a real execution-to-fill handoff helper
+- fill idempotency covers fallback replay and restart restore bridge
+- context/data integrity now includes:
+  - history-depth warmup semantics
+  - parent-period temporal alignment
+  - monotonic timeframe updates
+  - `source_event_time -> event_time`
+  - early readiness guarding in strategy evaluation
+- canonical datetime fields are now required to be UTC-aware
 
-- if a behavior is needed to make the first slice work, that does not by itself make it contract-canonical;
-- contract-level meaning still comes from the spec set in `docs/spec/`;
-- hardening-layer obligations remain phase-scoped to later work even if early defensive code already exists.
+## Tolerance semantics
 
-## Wave 1G Acceptance Checklist
+`SimpleStartupReconciler` defaults remain strict:
 
-The current vertical slice should be checked against the following acceptance criteria.
+- `cash_tolerance = Decimal("0")`
+- `quantity_tolerance = Decimal("0")`
 
-### End-to-end path
+Interpretation:
 
-- one `MarketEvent` can pass through the core path and contribute to `Position` and `PortfolioState`
-- the path remains seam-separated across input, strategy, risk, order construction, guard, execution, fill, position, portfolio, state, and startup reconciliation
+- `0` means exact `Decimal` equality;
+- tolerance is not silently widened by default;
+- any relaxed comparison must be chosen explicitly by the caller.
 
-### Restart survivability
+## Reserved or non-canonical interpretations
 
-- local state can be persisted into the `State Store`
-- restart can restore the latest local state snapshot
-- restored state remains readable as local owned truth rather than reconstructed from strategy or execution assumptions
+The following points remain important:
 
-### Startup reconciliation
+- full `TimeframeContext` is implemented, but not the only correct interpretation of Wave 1
+- `ContextGate` exists, but is not the mandatory active Wave 1 contour
+- hardening presence in code does not automatically make a behavior contract-canonical
+- startup-only reconciliation semantics stay distinct from non-startup reconciliation semantics
 
-- startup reconciliation can compare local restored state with external startup basis
-- the result is expressed as a formal startup reconciliation result
-- startup reconciliation does not silently expand into periodic or on-error reconciliation behavior
+## Wave 1G acceptance checklist
 
-### Boundary discipline
+- one MTF-aware market input path reaches `Position` and `PortfolioState`
+- restart restores persisted state
+- startup reconciliation runs on restored state
+- execution boundary does not leak into strategy, risk, or state ownership
+- active acceptance path does not depend on the legacy single-bar strategy
 
-- execution boundary does not leak into strategy, risk, fill-driven state processing, or local persistence
-- strategy does not read execution adapter details
-- risk does not perform execution checks
-- guard does not mutate state or replace execution
-- state persistence does not replace reconciliation
+## Practical reading rule
 
-## Next-document use
+For current repository status:
 
-This status document is intended to support the next implementation phase by answering:
-
-- what is already closed in the first vertical slice;
-- which seams are intentionally still reserved;
-- which current behaviors are temporary implementation choices;
-- what should be validated before moving beyond `Minimal Core v1`.
+- `README.md` is the quick summary
+- this file is the working implementation snapshot
+- the extracted source documents in `docs/spec/` remain the reference set for roadmap meaning

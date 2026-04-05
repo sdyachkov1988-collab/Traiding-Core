@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Mapping
 
-from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+from trading_core.domain.common import InstrumentRef, new_internal_id, require_utc_datetime, utc_now
 
 
 class EventKind(StrEnum):
@@ -43,6 +43,10 @@ class MarketEvent:
     source: str
     lineage_id: str | None = None
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.event_time, "event_time")
+        require_utc_datetime(self.observed_at, "observed_at")
 
     @classmethod
     def create(

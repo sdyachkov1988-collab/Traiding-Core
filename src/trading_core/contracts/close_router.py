@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from trading_core.domain.close_intent import CloseIntent, CloseRoutingResult
@@ -16,6 +17,7 @@ class CloseIntentRouterProtocol(Protocol):
     def route(
         self,
         close_intent: CloseIntent,
+        current_position_quantity: Decimal,
         instrument_spec: InstrumentExecutionSpec,
         execution_basis: ExecutionConstraintBasis,
         admissibility_basis: ExecutionAdmissibilityBasis,

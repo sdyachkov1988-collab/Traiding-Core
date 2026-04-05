@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
 from trading_core.domain import PortfolioState
 from trading_core.domain.common import InstrumentRef
+from trading_core.domain.fills import Fill
+from trading_core.domain.orders import OrderSide
 from trading_core.domain.portfolio_state import Position
+from trading_core.execution import IdempotentFillProcessor
 from trading_core.state import JsonFileStateStore
 
 
@@ -111,3 +115,70 @@ def test_json_file_state_store_save_with_fill_marker_does_not_leave_tmp_file(
 
     assert target_path.exists()
     assert not target_path.with_suffix(".tmp").exists()
+
+
+def test_state_store_last_processed_fill_id_can_be_restored_into_fill_processor(
+    tmp_path: Path,
+) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    store = JsonFileStateStore(target_path)
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=InstrumentRef(
+            instrument_id="btc-usdt",
+            symbol="BTCUSDT",
+            venue="binance",
+        ),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+    )
+
+    store.save_with_fill_marker(portfolio, fill.fill_id)
+    snapshot = JsonFileStateStore(target_path).load_latest()
+    assert snapshot is not None
+
+    restarted_processor = IdempotentFillProcessor()
+    restarted_processor.restore_processed_fill_id(snapshot.last_processed_fill_id)
+
+    try:
+        restarted_processor.accept(fill)
+    except ValueError as exc:
+        assert str(exc) == "Duplicate fill_id received by FillProcessor"
+    else:
+        raise AssertionError("Expected duplicate fill_id to be rejected after restart restore")
+
+
+def test_json_file_state_store_rejects_naive_datetime_during_deserialization(
+    tmp_path: Path,
+) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(
+        json.dumps(
+            {
+                "snapshot_id": "snapshot_1",
+                "saved_at": "2026-01-01T12:00:00",
+                "last_processed_fill_id": None,
+                "metadata": {"storage_format": "json"},
+                "portfolio_state": {
+                    "portfolio_state_id": "portfolio_1",
+                    "cash_balance": "1000",
+                    "realized_pnl": "0",
+                    "updated_at": "2026-01-01T12:00:00",
+                    "metadata": {},
+                    "positions": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        JsonFileStateStore(target_path).load_latest()
+    except TypeError as exc:
+        assert str(exc) == "portfolio_state.updated_at must be timezone-aware UTC"
+    else:
+        raise AssertionError("Expected naive persisted datetime to be rejected")

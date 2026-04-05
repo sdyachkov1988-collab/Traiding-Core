@@ -36,6 +36,8 @@ class SimpleOrderIntentBuilder:
             instrument_spec.quantity_step,
             rounding=ROUND_DOWN,
         )
+        if quantity < instrument_spec.min_order_quantity:
+            raise ValueError("Rounded quantity fell below instrument minimum quantity")
         limit_price = None
         if order_type is OrderType.LIMIT:
             limit_price = self._build_limit_price(

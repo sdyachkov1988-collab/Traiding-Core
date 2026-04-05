@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -124,7 +124,7 @@ class JsonFileStateStore:
                 quantity=Decimal(str(raw_position["quantity"])),
                 average_entry_price=Decimal(str(raw_position["average_entry_price"])),
                 realized_pnl=Decimal(str(raw_position["realized_pnl"])),
-                updated_at=datetime.fromisoformat(str(raw_position["updated_at"])),
+                updated_at=self._parse_utc_datetime(str(raw_position["updated_at"]), "position.updated_at"),
                 metadata=dict(raw_position["metadata"]),
             )
 
@@ -133,13 +133,13 @@ class JsonFileStateStore:
             cash_balance=Decimal(str(raw_portfolio["cash_balance"])),
             realized_pnl=Decimal(str(raw_portfolio["realized_pnl"])),
             positions=positions,
-            updated_at=datetime.fromisoformat(str(raw_portfolio["updated_at"])),
+            updated_at=self._parse_utc_datetime(str(raw_portfolio["updated_at"]), "portfolio_state.updated_at"),
             metadata=dict(raw_portfolio["metadata"]),
         )
         return PersistedStateSnapshot(
             snapshot_id=str(payload["snapshot_id"]),
             portfolio_state=portfolio_state,
-            saved_at=datetime.fromisoformat(str(payload["saved_at"])),
+            saved_at=self._parse_utc_datetime(str(payload["saved_at"]), "saved_at"),
             last_processed_fill_id=(
                 None
                 if payload.get("last_processed_fill_id") is None
@@ -147,3 +147,11 @@ class JsonFileStateStore:
             ),
             metadata=dict(payload["metadata"]),
         )
+
+    def _parse_utc_datetime(self, raw_value: str, field_name: str) -> datetime:
+        parsed = datetime.fromisoformat(raw_value)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise TypeError(f"{field_name} must be timezone-aware UTC")
+        if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+            raise TypeError(f"{field_name} must be UTC")
+        return parsed

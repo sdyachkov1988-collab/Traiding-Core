@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping
 
-from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+from trading_core.domain.common import InstrumentRef, new_internal_id, require_utc_datetime, utc_now
 from trading_core.domain.orders import OrderSide
 
 
@@ -34,6 +34,9 @@ class Fill:
     executed_at: datetime
     external_fill_id: str | None = None
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.executed_at, "executed_at")
 
     @property
     def gross_notional(self) -> Decimal:

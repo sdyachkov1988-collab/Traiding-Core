@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping
 
-from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+from trading_core.domain.common import InstrumentRef, new_internal_id, require_utc_datetime, utc_now
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +21,9 @@ class Position:
     realized_pnl: Decimal
     updated_at: datetime
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.updated_at, "updated_at")
 
     @classmethod
     def empty(
@@ -50,6 +53,9 @@ class PortfolioState:
     positions: Mapping[str, Position]
     updated_at: datetime
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.updated_at, "updated_at")
 
     @classmethod
     def empty(

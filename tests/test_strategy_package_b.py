@@ -83,3 +83,18 @@ def test_bar_direction_strategy_returns_no_action_for_missing_values() -> None:
 
     assert isinstance(result, NoAction)
     assert result.reason == "missing_open_or_close"
+
+
+def test_bar_direction_strategy_returns_no_action_when_context_not_ready() -> None:
+    strategy = BarDirectionStrategy()
+    context = build_context(open_value="100", close_value="102")
+    object.__setattr__(
+        context,
+        "readiness_flags",
+        {"event_received": True, "entry_ready": False, "context_ready": False},
+    )
+
+    result = strategy.evaluate(context)
+
+    assert isinstance(result, NoAction)
+    assert result.reason == "context_not_ready"

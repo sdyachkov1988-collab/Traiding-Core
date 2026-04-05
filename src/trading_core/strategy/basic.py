@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from trading_core.contracts.strategy import StrategyResult
-from trading_core.domain.context import MarketContext
+from trading_core.domain.common import InstrumentRef
+from trading_core.domain.context import MarketContext, Wave1MtfContext
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.strategy import NoAction, StrategyIntent
 
@@ -20,6 +21,13 @@ class BarDirectionStrategy:
 
     def evaluate(self, context: MarketContext) -> StrategyResult:
         """Return a strategy intent or explicit no-action from a valid context."""
+
+        if any(is_ready is False for is_ready in context.readiness_flags.values()):
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="context_not_ready",
+                strategy_name=self.strategy_name,
+            )
 
         payload = context.latest_event.payload
         open_value = payload.get("open")
@@ -65,4 +73,87 @@ class BarDirectionStrategy:
             strategy_name=self.strategy_name,
             context_id=context.context_id,
             metadata={"source_event_id": context.latest_event.event_id},
+        )
+
+
+@dataclass(slots=True)
+class MtfBarAlignmentStrategy:
+    """A minimal MTF-first reference strategy consuming TimeframeContext only."""
+
+    instrument: InstrumentRef
+    strategy_name: str = "mtf_bar_alignment"
+    entry_timeframe: str = "15m"
+    trend_timeframe: str = "1h"
+    min_entry_body_ratio: Decimal = Decimal("0.001")
+
+    def evaluate(self, context: Wave1MtfContext) -> StrategyResult:
+        """Return an intent only when Wave 1 MTF input is ready and aligned."""
+
+        if any(is_ready is False for is_ready in context.readiness_flags.values()):
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="context_not_ready",
+                strategy_name=self.strategy_name,
+            )
+
+        if context.closed_bar_only is False:
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="closed_bar_only_required",
+                strategy_name=self.strategy_name,
+            )
+
+        if context.no_lookahead_safe is False:
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="lookahead_boundary_not_safe",
+                strategy_name=self.strategy_name,
+            )
+
+        entry_bar = context.entry_bar
+        trend_bar = context.trend_bar
+        if entry_bar is None or trend_bar is None:
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="required_timeframe_missing",
+                strategy_name=self.strategy_name,
+            )
+
+        if entry_bar.open <= Decimal("0") or trend_bar.open <= Decimal("0"):
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="non_positive_open",
+                strategy_name=self.strategy_name,
+            )
+
+        entry_body_ratio = abs(entry_bar.close - entry_bar.open) / entry_bar.open
+        if entry_body_ratio < self.min_entry_body_ratio:
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="entry_bar_body_too_small",
+                strategy_name=self.strategy_name,
+            )
+
+        entry_side = OrderSide.BUY if entry_bar.close > entry_bar.open else OrderSide.SELL
+        trend_side = OrderSide.BUY if trend_bar.close > trend_bar.open else OrderSide.SELL
+        if entry_side is not trend_side:
+            return NoAction.create(
+                context_id=context.context_id,
+                reason="timeframe_direction_mismatch",
+                strategy_name=self.strategy_name,
+            )
+
+        trend_body_ratio = abs(trend_bar.close - trend_bar.open) / trend_bar.open
+        confidence = min(Decimal("1.0"), max(entry_body_ratio, trend_body_ratio))
+        return StrategyIntent.create(
+            instrument=self.instrument,
+            side=entry_side,
+            thesis="mtf_alignment_continuation",
+            confidence=confidence,
+            strategy_name=self.strategy_name,
+            context_id=context.context_id,
+            metadata={
+                "entry_timeframe": self.entry_timeframe,
+                "trend_timeframe": self.trend_timeframe,
+            },
         )

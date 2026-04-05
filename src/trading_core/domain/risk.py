@@ -8,7 +8,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Mapping
 
-from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+from trading_core.domain.common import InstrumentRef, new_internal_id, require_utc_datetime, utc_now
 from trading_core.domain.orders import OrderSide
 
 
@@ -37,6 +37,7 @@ class PortfolioRiskBasis:
 
     available_capital: Decimal
     max_capital_per_trade: Decimal
+    reference_price: Decimal
     current_position_quantity: Decimal = Decimal("0")
     portfolio_tradable: bool = True
 
@@ -54,6 +55,9 @@ class RiskDecision:
     rejection_reason: str | None
     created_at: datetime
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.created_at, "created_at")
 
     @classmethod
     def create(

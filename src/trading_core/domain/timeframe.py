@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping
 
-from trading_core.domain.common import new_internal_id, utc_now
+from trading_core.domain.common import new_internal_id, require_utc_datetime, utc_now
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +23,9 @@ class ClosedBar:
     bar_time: datetime
     is_closed: bool = True
 
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.bar_time, "bar_time")
+
 
 @dataclass(frozen=True, slots=True)
 class TimeframeSyncEvent:
@@ -33,6 +36,9 @@ class TimeframeSyncEvent:
     timeframe: str
     bar: ClosedBar
     received_at: datetime
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.received_at, "received_at")
 
     @classmethod
     def create(
@@ -67,6 +73,10 @@ class TimeframeContext:
     freshness_flags: Mapping[str, bool]
     alignment_policy: str
     created_at: datetime
+    history_depths: Mapping[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.created_at, "created_at")
 
     @classmethod
     def create(
@@ -76,6 +86,7 @@ class TimeframeContext:
         entry_timeframe: str,
         timeframe_set: tuple[str, ...],
         bars: Mapping[str, ClosedBar],
+        history_depths: Mapping[str, int] | None = None,
         readiness_flags: Mapping[str, bool],
         freshness_flags: Mapping[str, bool],
         alignment_policy: str,
@@ -88,6 +99,7 @@ class TimeframeContext:
             entry_timeframe=entry_timeframe,
             timeframe_set=timeframe_set,
             bars=dict(bars),
+            history_depths=dict(history_depths or {}),
             readiness_flags=dict(readiness_flags),
             freshness_flags=dict(freshness_flags),
             alignment_policy=alignment_policy,

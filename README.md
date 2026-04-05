@@ -1,38 +1,63 @@
 # Trading Core
 
-`Trading Core` is a Python 3.11+ implementation of a `Minimal Core v1` trading engine slice. The current repository already covers a full vertical path from a normalized market event through strategy, risk, order construction, execution boundary, fill-driven state updates, local persistence, and startup reconciliation.
+`Trading Core` is a Python 3.11+ implementation of a `Minimal Core v1` trading engine, plus the first next-stage seams from Tracks B and C. The repository now contains a stable Wave 1 vertical slice, remediation fixes from Tracks A and B, and explicit Wave 2-style modules that are present in code without being silently promoted into the canonical Wave 1 active contour.
 
-## Current Status
+## Current Repository State
 
-Implemented packages:
+Closed Wave 1 / `Minimal Core v1` vertical slice:
 
-- `Package A` - input and context foundation
+- `Package A` - normalized input and early context seam
 - `Package B` - strategy decision boundary
 - `Package C` - risk verdict boundary
-- `Package D1` - order builder
-- `Package D2` - pre-execution guard
-- `Package E` - execution boundary via `MockExecutionAdapter`
-- `Package F` - fill-driven spine with `Fill Processor`, `Position Engine`, and `Portfolio Engine`
-- `Package G1` - state store via `JsonFileStateStore` with atomic writes
-- `Package G2` - startup reconciliation
+- `Package D1/D2` - order builder and pre-execution guard
+- `Package E` - execution boundary
+- `Package F` - fill-driven state spine
+- `Package G1/G2` - local state store and startup reconciliation
 
-The current codebase supports a working path of:
+Implemented next-stage seams now present in the repository:
 
-`MarketEvent -> MarketContext -> StrategyIntent/NoAction -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+- `Wave 2A` - canonical timeframe store and `TimeframeContext` foundation
+- `Wave 2B` - `ContextGate`
+- `Wave 2C` - unknown-state and system-mode semantics
+- `Wave 2D` - reconciliation operating loop and recovery coordinator
+- `Wave 2E` - position-originated close routing contour
 
-## Reserved For The Next Phase
+## Active Wave 1 Path
 
-The following seams are still intentionally reserved rather than active scope:
+The active `Wave 1G` acceptance contour is `MTF-first`, but phase-correct:
 
-- full `TimeframeContext` family
-- `Context Gate`
-- periodic reconciliation
-- on-error reconciliation
-- governance layer
-- unknown-state handling
-- structured logging and broader observability hardening
+`market input -> Wave1MtfContext -> MTF strategy -> risk -> builder -> guard -> execution -> fill -> position -> portfolio -> state -> startup reconciliation`
 
-These are visible in the spec and package map, but they are not yet unfolded as active implementation scope for the current slice.
+Important boundary:
+
+- Wave 1 uses a minimal `Wave1MtfContext` input seam for the active path
+- full `TimeframeContext + ContextGate` exists in the repository as next-stage capability
+- those seams are not silently redefined here as the mandatory canonical Wave 1 contour
+
+Legacy `BarDirectionStrategy` remains in the project as reference-only behavior, not as the active acceptance strategy.
+
+## Track A / Track B Remediation Status
+
+The repository now includes the remediation outcomes that make the core materially safer:
+
+- risk sizing uses `reference_price` and step-aligned base quantity
+- spot `SELL` requires real position basis
+- impossible oversell is explicit conflict, not silent clipping
+- zero-quantity zombie positions are removed from portfolio truth
+- builder rechecks quantity after rounding
+- acceptance path uses an execution-to-fill seam instead of manual fill assembly
+- fill idempotency covers fallback identity and restart restore bridge
+- context/data integrity now includes history-depth warmup, temporal alignment, monotonic bar updates, source event time, and early readiness checks
+- UTC-aware datetime validation is enforced across canonical domain objects
+
+## Tolerance Semantics
+
+`SimpleStartupReconciler` keeps:
+
+- `cash_tolerance = Decimal("0")`
+- `quantity_tolerance = Decimal("0")`
+
+This means exact `Decimal` equality by default. Any tolerant comparison must be chosen explicitly by the caller; there is no implicit fuzzy matching.
 
 ## Running Tests
 
@@ -42,18 +67,15 @@ pytest
 
 ## Architectural Invariants
 
-The current implementation follows these core engineering rules:
-
 - `Decimal` is used for prices, quantities, and monetary values
-- datetimes are UTC-aware
+- canonical domain datetimes are UTC-aware
 - domain objects are immutable dataclasses
-- state snapshots are written atomically
-- fill processing is idempotent within the current in-memory process scope
+- local snapshots are written atomically
+- fill processing is idempotent within the current process and restart bridge
+- impossible fill/state conflicts are surfaced explicitly, not normalized away
 
-## Source Of Truth
+## Docs Map
 
-The implementation is derived from the working spec set in:
-
-- `docs/spec/index.md`
-- `docs/implementation_status.md`
-- `docs/project_layout.md`
+- [`docs/spec/index.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\spec\index.md) - source spec extraction
+- [`docs/implementation_status.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\implementation_status.md) - current status after Tracks A, B, and C remediation work
+- [`docs/project_layout.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\project_layout.md) - package and seam layout

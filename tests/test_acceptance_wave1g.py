@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 
+from trading_core.context import (
+    InstrumentTimeframeStore,
+)
+from trading_core.domain.common import InstrumentRef, utc_now
 from trading_core.domain import (
     AdmittedOrder,
-    EventKind,
+    ClosedBar,
     ExecutionAdmissibilityBasis,
     ExecutionConstraintBasis,
     ExecutionReport,
@@ -17,8 +22,7 @@ from trading_core.domain import (
     GuardVerdict,
     InstrumentExecutionSpec,
     InstrumentRiskBasis,
-    MarketContext,
-    MarketEvent,
+    NoAction,
     OrderIntent,
     OrderSide,
     OrderType,
@@ -28,7 +32,9 @@ from trading_core.domain import (
     RiskDecision,
     StartupReconciliationVerdict,
     StrategyIntent,
+    TimeframeSyncEvent,
     TimeInForce,
+    Wave1MtfContext,
 )
 from trading_core.execution import (
     IdempotentFillProcessor,
@@ -36,43 +42,68 @@ from trading_core.execution import (
     SimpleOrderIntentBuilder,
     SimplePreExecutionGuard,
 )
-from trading_core.input import DictEventNormalizer, SimpleMarketContextAssembler
+from trading_core.input import Wave1MtfContextAssembler
 from trading_core.portfolio import SpotPortfolioEngine
 from trading_core.positions import SpotPositionEngine
 from trading_core.reconciliation import SimpleStartupReconciler
 from trading_core.risk import ConfidenceCapRiskEvaluator
 from trading_core.state import JsonFileStateStore
-from trading_core.strategy import BarDirectionStrategy
+from trading_core.strategy import BarDirectionStrategy, MtfBarAlignmentStrategy
 
 
 def build_wave1g_pipeline():
-    normalizer = DictEventNormalizer()
-    assembler = SimpleMarketContextAssembler(
-        entry_timeframe="15m",
-        timeframe_set=("15m", "1h"),
-        alignment_policy="closed-bars-only",
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
     )
-    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.001"))
+    store = InstrumentTimeframeStore("btc-usdt")
+    now = utc_now()
+    entry_bar = TimeframeSyncEvent.create(
+        instrument_id="btc-usdt",
+        timeframe="15m",
+        bar=ClosedBar(
+            timeframe="15m",
+            open=Decimal("100"),
+            high=Decimal("106"),
+            low=Decimal("99"),
+            close=Decimal("105"),
+            volume=Decimal("10"),
+            bar_time=now - timedelta(seconds=60),
+            is_closed=True,
+        ),
+        received_at=now,
+    )
+    trend_bar = TimeframeSyncEvent.create(
+        instrument_id="btc-usdt",
+        timeframe="1h",
+        bar=ClosedBar(
+            timeframe="1h",
+            open=Decimal("95"),
+            high=Decimal("106"),
+            low=Decimal("94"),
+            close=Decimal("104"),
+            volume=Decimal("40"),
+            bar_time=now - timedelta(seconds=120),
+            is_closed=True,
+        ),
+        received_at=now,
+    )
+    store.update(entry_bar)
+    store.update(trend_bar)
+    assembler = Wave1MtfContextAssembler(
+        instrument=instrument,
+        store=store,
+        entry_timeframe="15m",
+        trend_timeframe="1h",
+    )
+    strategy = MtfBarAlignmentStrategy(instrument=instrument)
     risk = ConfidenceCapRiskEvaluator(min_confidence=Decimal("0.01"))
     builder = SimpleOrderIntentBuilder()
     guard = SimplePreExecutionGuard()
-
-    market_event = normalizer.normalize(
-        {
-            "instrument_id": "btc-usdt",
-            "symbol": "BTCUSDT",
-            "venue": "binance",
-            "event_kind": "bar",
-            "source": "test-feed",
-            "payload": {
-                "timeframe": "15m",
-                "open": "100",
-                "close": "105",
-            },
-        }
-    )
-    context = assembler.assemble(market_event)
+    context = assembler.assemble()
     strategy_intent = strategy.evaluate(context)
+    assert isinstance(strategy_intent, StrategyIntent)
     risk_decision = risk.evaluate(
         intent=strategy_intent,
         instrument_basis=InstrumentRiskBasis(
@@ -82,8 +113,9 @@ def build_wave1g_pipeline():
             quantity_step=Decimal("0.01"),
         ),
         portfolio_basis=PortfolioRiskBasis(
-            available_capital=Decimal("10"),
-            max_capital_per_trade=Decimal("5"),
+            available_capital=Decimal("500"),
+            max_capital_per_trade=Decimal("250"),
+            reference_price=Decimal("105.00"),
         ),
     )
     order_intent = builder.build(
@@ -114,12 +146,20 @@ def build_wave1g_pipeline():
         ),
     )
     admitted_order = AdmittedOrder.create(order_intent=order_intent, guard_outcome=guard_outcome)
-    return market_event, context, strategy_intent, risk_decision, order_intent, guard_outcome, admitted_order
+    return (
+        (entry_bar, trend_bar),
+        context,
+        strategy_intent,
+        risk_decision,
+        order_intent,
+        guard_outcome,
+        admitted_order,
+    )
 
 
-def test_wave1g_happy_path_market_event_reaches_portfolio_state() -> None:
+def test_wave1g_happy_path_timeframe_context_reaches_portfolio_state() -> None:
     (
-        market_event,
+        sync_events,
         context,
         strategy_intent,
         risk_decision,
@@ -135,29 +175,25 @@ def test_wave1g_happy_path_market_event_reaches_portfolio_state() -> None:
 
     reports = adapter.submit(admitted_order)
     accepted_report = next(report for report in reports if report.kind is ExecutionReportKind.ACCEPTED)
-    fill = Fill.create(
-        order_intent_id=admitted_order.order_intent.order_intent_id,
-        instrument=admitted_order.order_intent.instrument,
-        side=admitted_order.order_intent.side,
-        quantity=admitted_order.order_intent.quantity,
-        price=admitted_order.order_intent.limit_price or Decimal("105.00"),
-        fee=Decimal("0"),
-        external_fill_id=accepted_report.external_order_id,
-    )
+    fill = adapter.materialize_fill(admitted_order, accepted_report)
     accepted_fill = fill_processor.accept(fill)
     position = position_engine.apply(None, accepted_fill)
     portfolio = portfolio_engine.apply(initial_portfolio, accepted_fill, position)
 
-    assert isinstance(market_event, MarketEvent)
-    assert isinstance(context, MarketContext)
+    assert len(sync_events) == 2
+    assert all(isinstance(event, TimeframeSyncEvent) for event in sync_events)
+    assert isinstance(context, Wave1MtfContext)
     assert isinstance(strategy_intent, StrategyIntent)
     assert isinstance(risk_decision, RiskDecision)
     assert isinstance(order_intent, OrderIntent)
     assert isinstance(guard_outcome, GuardOutcome)
     assert isinstance(accepted_report, ExecutionReport)
+    assert isinstance(fill, Fill)
     assert isinstance(position, Position)
     assert isinstance(portfolio, PortfolioState)
     assert guard_outcome.verdict is GuardVerdict.PASSED
+    assert strategy_intent.metadata["entry_timeframe"] == "15m"
+    assert strategy_intent.metadata["trend_timeframe"] == "1h"
     assert portfolio.cash_balance != initial_portfolio.cash_balance
     assert "btc-usdt" in portfolio.positions
     assert fill.order_intent_id == order_intent.order_intent_id
@@ -167,7 +203,7 @@ def test_wave1g_happy_path_market_event_reaches_portfolio_state() -> None:
 
 def test_wave1g_adapter_substitution_does_not_affect_strategy_logic() -> None:
     (
-        _market_event,
+        _sync_events,
         _context,
         strategy_intent,
         risk_decision,
@@ -194,7 +230,7 @@ def test_wave1g_restart_restores_state_and_passes_startup_reconciliation(
     tmp_path: Path,
 ) -> None:
     (
-        _market_event,
+        _sync_events,
         _context,
         _strategy_intent,
         _risk_decision,
@@ -211,15 +247,7 @@ def test_wave1g_restart_restores_state_and_passes_startup_reconciliation(
 
     reports = adapter.submit(admitted_order)
     accepted_report = next(report for report in reports if report.kind is ExecutionReportKind.ACCEPTED)
-    fill = Fill.create(
-        order_intent_id=admitted_order.order_intent.order_intent_id,
-        instrument=admitted_order.order_intent.instrument,
-        side=admitted_order.order_intent.side,
-        quantity=admitted_order.order_intent.quantity,
-        price=admitted_order.order_intent.limit_price or Decimal("105.00"),
-        fee=Decimal("0"),
-        external_fill_id=accepted_report.external_order_id,
-    )
+    fill = adapter.materialize_fill(admitted_order, accepted_report)
     accepted_fill = fill_processor.accept(fill)
     position = position_engine.apply(None, accepted_fill)
     original_portfolio = portfolio_engine.apply(
@@ -247,3 +275,58 @@ def test_wave1g_restart_restores_state_and_passes_startup_reconciliation(
     assert loaded_snapshot.portfolio_state.cash_balance == original_portfolio.cash_balance
     assert loaded_snapshot.last_processed_fill_id == fill.fill_id
     assert reconciliation_result.verdict is StartupReconciliationVerdict.MATCHED
+
+
+def test_wave1g_active_path_uses_mtf_strategy_not_legacy_single_bar_strategy() -> None:
+    (
+        _sync_events,
+        context,
+        strategy_intent,
+        _risk_decision,
+        _order_intent,
+        _guard_outcome,
+        _admitted_order,
+    ) = build_wave1g_pipeline()
+
+    assert isinstance(context, Wave1MtfContext)
+    assert MtfBarAlignmentStrategy is not BarDirectionStrategy
+    assert strategy_intent.strategy_name == "mtf_bar_alignment"
+
+
+def test_wave1g_strategy_returns_no_action_when_mandatory_htf_input_missing() -> None:
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    store = InstrumentTimeframeStore("btc-usdt")
+    now = utc_now()
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=ClosedBar(
+                timeframe="15m",
+                open=Decimal("100"),
+                high=Decimal("106"),
+                low=Decimal("99"),
+                close=Decimal("105"),
+                volume=Decimal("10"),
+                bar_time=now - timedelta(seconds=60),
+                is_closed=True,
+            ),
+            received_at=now,
+        )
+    )
+    context = Wave1MtfContextAssembler(
+        instrument=instrument,
+        store=store,
+        entry_timeframe="15m",
+        trend_timeframe="1h",
+    ).assemble()
+    strategy = MtfBarAlignmentStrategy(instrument=instrument)
+
+    result = strategy.evaluate(context)
+
+    assert isinstance(result, NoAction)
+    assert result.reason == "context_not_ready"

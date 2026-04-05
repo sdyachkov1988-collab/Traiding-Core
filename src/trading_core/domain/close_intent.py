@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+from trading_core.domain.common import InstrumentRef, new_internal_id, require_utc_datetime, utc_now
 
 
 class CloseRoutingVerdict(StrEnum):
@@ -28,6 +28,9 @@ class CloseIntent:
     quantity: Decimal
     reason: str
     created_at: datetime
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.created_at, "created_at")
 
     @classmethod
     def create(
@@ -61,6 +64,9 @@ class CloseRoutingResult:
     admitted_order_id: str | None
     reason: str | None
     created_at: datetime
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.created_at, "created_at")
 
     @classmethod
     def create(

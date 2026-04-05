@@ -74,6 +74,38 @@ def test_fill_driven_spine_realizes_pnl_only_from_sell_fill() -> None:
     assert portfolio.cash_balance == Decimal("994.3")
 
 
+def test_portfolio_engine_removes_zero_quantity_position_after_full_close() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+    portfolio_engine = SpotPortfolioEngine()
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+
+    buy_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+    )
+    sell_fill = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=instrument(),
+        side=OrderSide.SELL,
+        quantity=Decimal("0.10"),
+        price=Decimal("110"),
+        fee=Decimal("0"),
+    )
+
+    position = position_engine.apply(None, fill_processor.accept(buy_fill))
+    portfolio = portfolio_engine.apply(portfolio, buy_fill, position)
+    position = position_engine.apply(position, fill_processor.accept(sell_fill))
+    portfolio = portfolio_engine.apply(portfolio, sell_fill, position)
+
+    assert "btc-usdt" not in portfolio.positions
+    assert portfolio.realized_pnl == Decimal("1.0")
+
+
 def test_fill_processor_rejects_duplicate_fill_identity() -> None:
     fill_processor = IdempotentFillProcessor()
     fill = Fill.create(
@@ -89,8 +121,34 @@ def test_fill_processor_rejects_duplicate_fill_identity() -> None:
         fill_processor.accept(fill)
 
 
-def test_portfolio_engine_does_not_overcount_cash_on_oversell() -> None:
-    """Selling more than position qty must only credit actually-sold qty."""
+def test_position_engine_rejects_impossible_oversell_fill() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+
+    buy_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+    )
+    position = position_engine.apply(None, fill_processor.accept(buy_fill))
+
+    sell_fill = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=instrument(),
+        side=OrderSide.SELL,
+        quantity=Decimal("0.20"),
+        price=Decimal("110"),
+        fee=Decimal("0"),
+    )
+
+    with pytest.raises(ValueError, match="sell_fill_exceeds_current_position_quantity"):
+        position_engine.apply(position, fill_processor.accept(sell_fill))
+
+
+def test_portfolio_engine_rejects_impossible_oversell_fill() -> None:
     fill_processor = IdempotentFillProcessor()
     position_engine = SpotPositionEngine()
     portfolio_engine = SpotPortfolioEngine()
@@ -107,7 +165,7 @@ def test_portfolio_engine_does_not_overcount_cash_on_oversell() -> None:
     position = position_engine.apply(None, fill_processor.accept(buy_fill))
     portfolio = portfolio_engine.apply(portfolio, buy_fill, position)
 
-    sell_fill = Fill.create(
+    impossible_sell = Fill.create(
         order_intent_id="ordint_2",
         instrument=instrument(),
         side=OrderSide.SELL,
@@ -115,11 +173,42 @@ def test_portfolio_engine_does_not_overcount_cash_on_oversell() -> None:
         price=Decimal("110"),
         fee=Decimal("0"),
     )
-    position = position_engine.apply(position, fill_processor.accept(sell_fill))
-    portfolio = portfolio_engine.apply(portfolio, sell_fill, position)
 
-    assert portfolio.cash_balance == Decimal("1001")
-    assert position.quantity == Decimal("0")
+    with pytest.raises(ValueError, match="sell_fill_exceeds_current_position_quantity"):
+        portfolio_engine.apply(portfolio, impossible_sell, position)
+
+
+def test_impossible_oversell_rejection_leaves_existing_portfolio_truth_unchanged() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+    portfolio_engine = SpotPortfolioEngine()
+    original_portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+
+    buy_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+    )
+    position = position_engine.apply(None, fill_processor.accept(buy_fill))
+    portfolio = portfolio_engine.apply(original_portfolio, buy_fill, position)
+
+    impossible_sell = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=instrument(),
+        side=OrderSide.SELL,
+        quantity=Decimal("0.20"),
+        price=Decimal("110"),
+        fee=Decimal("0"),
+    )
+
+    with pytest.raises(ValueError, match="sell_fill_exceeds_current_position_quantity"):
+        position_engine.apply(position, fill_processor.accept(impossible_sell))
+
+    assert portfolio.cash_balance == Decimal("990")
+    assert portfolio.positions["btc-usdt"].quantity == Decimal("0.10")
 
 
 def test_portfolio_engine_aggregates_realized_pnl_across_instruments() -> None:
@@ -241,6 +330,30 @@ def test_fill_processor_falls_back_to_internal_fill_id_when_external_id_missing(
         fill_processor.accept(fill)
 
 
+def test_fill_processor_rejects_recreated_duplicate_without_external_id() -> None:
+    fill_processor = IdempotentFillProcessor()
+    first = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+    )
+    replayed = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+    )
+
+    fill_processor.accept(first)
+    with pytest.raises(ValueError, match="Duplicate fallback fill identity"):
+        fill_processor.accept(replayed)
+
+
 def test_fill_processor_accepts_distinct_external_fill_ids() -> None:
     fill_processor = IdempotentFillProcessor()
     first = Fill.create(
@@ -258,6 +371,27 @@ def test_fill_processor_accepts_distinct_external_fill_ids() -> None:
         quantity=Decimal("0.10"),
         price=Decimal("101"),
         external_fill_id="ext_456",
+    )
+
+    assert fill_processor.accept(first) is first
+    assert fill_processor.accept(second) is second
+
+
+def test_fill_processor_accepts_distinct_fallback_fill_identities_without_external_id() -> None:
+    fill_processor = IdempotentFillProcessor()
+    first = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+    )
+    second = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("101"),
     )
 
     assert fill_processor.accept(first) is first

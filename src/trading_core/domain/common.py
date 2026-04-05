@@ -21,6 +21,15 @@ def new_internal_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
 
 
+def require_utc_datetime(value: datetime, field_name: str) -> None:
+    """Reject naive or non-UTC datetimes in canonical domain objects."""
+
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must be timezone-aware UTC")
+    if value.utcoffset() != timezone.utc.utcoffset(value):
+        raise ValueError(f"{field_name} must be UTC")
+
+
 @dataclass(frozen=True, slots=True)
 class InstrumentRef:
     """Minimal instrument identity used across early seams."""

@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Mapping
 
-from trading_core.domain.common import new_internal_id, utc_now
+from trading_core.domain.common import new_internal_id, require_utc_datetime, utc_now
 from trading_core.domain.guards import GuardOutcome, GuardVerdict
 from trading_core.domain.orders import OrderIntent
 
@@ -30,6 +30,9 @@ class AdmittedOrder:
     guard_outcome: GuardOutcome
     admitted_at: datetime
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.admitted_at, "admitted_at")
 
     @classmethod
     def create(
@@ -66,6 +69,9 @@ class ExecutionReport:
     external_order_id: str | None = None
     reason: str | None = None
     metadata: Mapping[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.observed_at, "observed_at")
 
     @classmethod
     def create(

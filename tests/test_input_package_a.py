@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import timezone
+
 import pytest
 
 from trading_core.domain import EventKind
+from trading_core.domain.common import utc_now
 from trading_core.input import DictEventNormalizer, RawMarketEvent, SimpleMarketContextAssembler
 
 
@@ -29,6 +32,7 @@ def test_dict_event_normalizer_converts_mapping_into_market_event() -> None:
 
 def test_dict_event_normalizer_accepts_explicit_raw_model() -> None:
     normalizer = DictEventNormalizer()
+    source_event_time = utc_now()
 
     event = normalizer.normalize(
         RawMarketEvent(
@@ -38,11 +42,33 @@ def test_dict_event_normalizer_accepts_explicit_raw_model() -> None:
             event_kind="trade",
             source="test-feed",
             payload={"price": "3200", "quantity": "0.5"},
+            source_event_time=source_event_time,
         )
     )
 
     assert event.instrument.symbol == "ETHUSDT"
     assert event.event_kind == EventKind.TRADE
+    assert event.event_time == source_event_time
+
+
+def test_dict_event_normalizer_uses_source_event_time_when_provided() -> None:
+    normalizer = DictEventNormalizer()
+    source_event_time = utc_now()
+
+    event = normalizer.normalize(
+        {
+            "instrument_id": "btc-usdt",
+            "symbol": "BTCUSDT",
+            "venue": "binance",
+            "event_kind": "bar",
+            "source": "test-feed",
+            "payload": {"timeframe": "15m", "close": "65000"},
+            "source_event_time": source_event_time,
+        }
+    )
+
+    assert event.event_time == source_event_time
+    assert event.event_time.tzinfo == timezone.utc
 
 
 def test_dict_event_normalizer_rejects_missing_required_keys() -> None:

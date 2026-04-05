@@ -32,6 +32,7 @@ class TimeframeContextAssembler:
                 return None
 
         now = utc_now()
+        history_depths = self.store.get_history_depths()
         readiness_flags = {
             timeframe: timeframe in bars
             for timeframe in self.alignment_policy.required_timeframes
@@ -45,6 +46,7 @@ class TimeframeContextAssembler:
             entry_timeframe=self.alignment_policy.entry_timeframe,
             timeframe_set=self.alignment_policy.required_timeframes,
             bars=bars,
+            history_depths=history_depths,
             readiness_flags=readiness_flags,
             freshness_flags=freshness_flags,
             alignment_policy=self.alignment_policy.policy_name,

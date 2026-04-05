@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from trading_core.domain.common import new_internal_id, utc_now
+from trading_core.domain.common import new_internal_id, require_utc_datetime, utc_now
 
 
 class GateVerdict(StrEnum):
@@ -27,6 +27,9 @@ class GateOutcome:
     bars_seen: int
     warmup_required: int
     checked_at: datetime
+
+    def __post_init__(self) -> None:
+        require_utc_datetime(self.checked_at, "checked_at")
 
     @classmethod
     def create(

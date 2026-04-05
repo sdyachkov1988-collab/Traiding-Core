@@ -29,6 +29,7 @@ class DictEventNormalizer:
             event_kind=event_kind,
             payload=parsed.payload,
             source=parsed.source,
+            event_time=parsed.source_event_time,
             metadata=parsed.metadata,
         )
 
@@ -61,6 +62,10 @@ class DictEventNormalizer:
         if not isinstance(metadata, Mapping):
             raise TypeError("raw_event['metadata'] must be a mapping")
 
+        source_event_time = raw_event.get("source_event_time")
+        if source_event_time is not None and not isinstance(source_event_time, datetime):
+            raise TypeError("raw_event['source_event_time'] must be a datetime")
+
         return RawMarketEvent(
             instrument_id=str(raw_event["instrument_id"]),
             symbol=str(raw_event["symbol"]),
@@ -68,6 +73,7 @@ class DictEventNormalizer:
             event_kind=str(raw_event["event_kind"]),
             source=str(raw_event["source"]),
             payload={str(key): str(value) for key, value in payload.items()},
+            source_event_time=source_event_time,
             market_type=str(raw_event.get("market_type", "spot")),
             metadata={str(key): str(value) for key, value in metadata.items()},
         )

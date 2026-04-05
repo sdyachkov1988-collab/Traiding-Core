@@ -18,17 +18,24 @@ class SpotPortfolioEngine:
     def apply(self, current: PortfolioState, fill: Fill, position: Position) -> PortfolioState:
         """Return the next portfolio state after a fill."""
 
+        prev_position = current.positions.get(fill.instrument.instrument_id)
+
         if fill.side is OrderSide.BUY:
             next_cash_balance = current.cash_balance - fill.gross_notional - fill.fee
         else:
-            prev_position = current.positions.get(fill.instrument.instrument_id)
             prev_quantity = prev_position.quantity if prev_position is not None else Decimal("0")
-            actually_sold = min(prev_quantity, fill.quantity)
-            next_cash_balance = current.cash_balance + (actually_sold * fill.price) - fill.fee
+            if fill.quantity > prev_quantity:
+                raise ValueError("sell_fill_exceeds_current_position_quantity")
+            next_cash_balance = current.cash_balance + (fill.quantity * fill.price) - fill.fee
 
         next_positions = dict(current.positions)
-        next_positions[position.instrument.instrument_id] = position
-        next_realized_pnl = sum(p.realized_pnl for p in next_positions.values())
+        if position.quantity <= Decimal("0"):
+            next_positions.pop(position.instrument.instrument_id, None)
+        else:
+            next_positions[position.instrument.instrument_id] = position
+
+        previous_realized = prev_position.realized_pnl if prev_position is not None else Decimal("0")
+        next_realized_pnl = current.realized_pnl - previous_realized + position.realized_pnl
         return PortfolioState(
             portfolio_state_id=new_internal_id("portfolio"),
             cash_balance=next_cash_balance,

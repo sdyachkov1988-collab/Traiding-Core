@@ -19,8 +19,24 @@ from trading_core.domain.common import utc_now
 from trading_core.domain.timeframe import ClosedBar, TimeframeContext
 
 
-def make_closed_bar(*, timeframe: str, age_seconds: int = 0) -> ClosedBar:
-    now = utc_now()
+def make_closed_bar(
+    *,
+    timeframe: str,
+    age_seconds: int = 0,
+    bar_time=None,
+) -> ClosedBar:
+    now = utc_now().replace(second=0, microsecond=0)
+    if bar_time is None and timeframe.endswith("m"):
+        minutes = int(timeframe[:-1])
+        aligned_minute = (now.minute // minutes) * minutes
+        bar_time = now.replace(minute=aligned_minute)
+    elif bar_time is None and timeframe.endswith("h"):
+        hours = int(timeframe[:-1])
+        aligned_hour = (now.hour // hours) * hours
+        bar_time = now.replace(hour=aligned_hour, minute=0)
+    elif bar_time is None:
+        bar_time = now
+
     return ClosedBar(
         timeframe=timeframe,
         open=Decimal("100"),
@@ -28,7 +44,7 @@ def make_closed_bar(*, timeframe: str, age_seconds: int = 0) -> ClosedBar:
         low=Decimal("95"),
         close=Decimal("105"),
         volume=Decimal("10"),
-        bar_time=now - timedelta(seconds=age_seconds),
+        bar_time=bar_time - timedelta(seconds=age_seconds),
         is_closed=True,
     )
 
@@ -38,6 +54,7 @@ def make_context(
     readiness_flags: dict[str, bool] | None = None,
     freshness_flags: dict[str, bool] | None = None,
     bars: dict[str, ClosedBar] | None = None,
+    history_depths: dict[str, int] | None = None,
 ) -> TimeframeContext:
     bar_map = bars or {
         "15m": make_closed_bar(timeframe="15m"),
@@ -48,6 +65,7 @@ def make_context(
         entry_timeframe="15m",
         timeframe_set=("15m", "1h"),
         bars=bar_map,
+        history_depths=history_depths or {"15m": len(bar_map), "1h": 1},
         readiness_flags=readiness_flags or {"15m": True, "1h": True},
         freshness_flags=freshness_flags or {"15m": True, "1h": True},
         alignment_policy="bar_alignment_policy",
@@ -55,7 +73,7 @@ def make_context(
 
 
 def test_context_gate_defers_none_context() -> None:
-    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=7200))
 
     outcome = gate.check(None)
 
@@ -85,7 +103,7 @@ def test_context_gate_defers_when_timeframe_not_ready() -> None:
 
 def test_context_gate_defers_when_warmup_not_reached() -> None:
     gate = ContextGate(warmup_bars=3, freshness_policy=FreshnessPolicy(max_age_seconds=300))
-    context = make_context()
+    context = make_context(history_depths={"15m": 2, "1h": 1})
 
     outcome = gate.check(context)
 
@@ -95,7 +113,7 @@ def test_context_gate_defers_when_warmup_not_reached() -> None:
 
 def test_context_gate_admits_when_all_conditions_are_met() -> None:
     gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
-    context = make_context()
+    context = make_context(history_depths={"15m": 2, "1h": 1})
 
     outcome = gate.check(context)
 
@@ -105,12 +123,12 @@ def test_context_gate_admits_when_all_conditions_are_met() -> None:
 
 def test_gate_outcome_contains_bars_seen_and_warmup_required() -> None:
     gate = ContextGate(warmup_bars=3, freshness_policy=FreshnessPolicy(max_age_seconds=300))
-    context = make_context()
+    context = make_context(history_depths={"15m": 4, "1h": 1})
 
     outcome = gate.check(context)
 
     assert isinstance(outcome, GateOutcome)
-    assert outcome.bars_seen == 2
+    assert outcome.bars_seen == 4
     assert outcome.warmup_required == 3
     assert outcome.checked_at.tzinfo == timezone.utc
 
@@ -139,14 +157,32 @@ def test_admitted_context_can_flow_into_strategy_intent() -> None:
         )
 
     store = InstrumentTimeframeStore("btc-usdt")
-    for timeframe in ("15m", "1h"):
-        store.update(
-            TimeframeSyncEvent.create(
-                instrument_id="btc-usdt",
-                timeframe=timeframe,
-                bar=make_closed_bar(timeframe=timeframe),
-            )
+    first_entry_bar = make_closed_bar(timeframe="15m")
+    second_entry_bar = make_closed_bar(
+        timeframe="15m",
+        bar_time=first_entry_bar.bar_time + timedelta(minutes=15),
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=first_entry_bar,
         )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=second_entry_bar,
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=make_closed_bar(timeframe="1h"),
+        )
+    )
     context = TimeframeContextAssembler(
         instrument_id="btc-usdt",
         store=store,
@@ -155,9 +191,9 @@ def test_admitted_context_can_flow_into_strategy_intent() -> None:
             required_timeframes=("15m", "1h"),
         ),
         closed_bar_policy=ClosedBarPolicy(),
-        freshness_policy=FreshnessPolicy(max_age_seconds=300),
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
     ).assemble()
-    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=7200))
 
     assert context is not None
     outcome = gate.check(context)

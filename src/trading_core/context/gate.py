@@ -27,11 +27,13 @@ class ContextGate:
                 warmup_required=self.warmup_bars,
             )
 
+        entry_history_depth = context.history_depths.get(context.entry_timeframe, 0)
+
         if any(is_fresh is False for is_fresh in context.freshness_flags.values()):
             return GateOutcome.create(
                 verdict=GateVerdict.REJECTED,
                 reason="stale_context",
-                bars_seen=len(context.bars),
+                bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
 
@@ -39,11 +41,11 @@ class ContextGate:
             return GateOutcome.create(
                 verdict=GateVerdict.DEFERRED,
                 reason="timeframe_not_ready",
-                bars_seen=len(context.bars),
+                bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
 
-        bars_seen = len(context.bars)
+        bars_seen = entry_history_depth
         if bars_seen < self.warmup_bars:
             return GateOutcome.create(
                 verdict=GateVerdict.DEFERRED,

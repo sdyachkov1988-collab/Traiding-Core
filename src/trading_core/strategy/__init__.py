@@ -1,5 +1,5 @@
 """Strategy decision boundary."""
 
-from trading_core.strategy.basic import BarDirectionStrategy
+from trading_core.strategy.basic import BarDirectionStrategy, MtfBarAlignmentStrategy
 
-__all__ = ["BarDirectionStrategy"]
+__all__ = ["BarDirectionStrategy", "MtfBarAlignmentStrategy"]

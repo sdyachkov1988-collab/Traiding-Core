@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from trading_core.domain.execution import AdmittedOrder, ExecutionReport, ExecutionReportKind
+from trading_core.domain.fills import Fill
 
 
 @dataclass(slots=True)
@@ -47,3 +49,34 @@ class MockExecutionAdapter:
             metadata={"admitted_order_id": admitted_order.admitted_order_id},
         )
         return (submitted, accepted, acknowledged)
+
+    def materialize_fill(
+        self,
+        admitted_order: AdmittedOrder,
+        report: ExecutionReport,
+        *,
+        fee: Decimal = Decimal("0"),
+    ) -> Fill:
+        """Create a normalized fill fact from an accepted execution report."""
+
+        if report.kind not in (ExecutionReportKind.ACCEPTED, ExecutionReportKind.ACKNOWLEDGED):
+            raise ValueError("Fill materialization requires an accepted or acknowledged report")
+        if report.order_intent_id != admitted_order.order_intent.order_intent_id:
+            raise ValueError("ExecutionReport does not match AdmittedOrder")
+        execution_price = admitted_order.order_intent.limit_price
+        if execution_price is None:
+            raise ValueError("MockExecutionAdapter cannot materialize a fill without execution price")
+
+        return Fill.create(
+            order_intent_id=admitted_order.order_intent.order_intent_id,
+            instrument=admitted_order.order_intent.instrument,
+            side=admitted_order.order_intent.side,
+            quantity=admitted_order.order_intent.quantity,
+            price=execution_price,
+            fee=fee,
+            external_fill_id=report.external_order_id,
+            metadata={
+                "admitted_order_id": admitted_order.admitted_order_id,
+                "execution_report_id": report.report_id,
+            },
+        )

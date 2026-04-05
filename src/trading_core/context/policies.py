@@ -18,9 +18,37 @@ class BarAlignmentPolicy:
     policy_name: str = "bar_alignment_policy"
 
     def is_aligned(self, bars: Mapping[str, ClosedBar]) -> bool:
-        """Return True when all required timeframes are present."""
+        """Return True when required bars exist and higher-timeframe parents align."""
 
-        return all(timeframe in bars for timeframe in self.required_timeframes)
+        if not all(timeframe in bars for timeframe in self.required_timeframes):
+            return False
+
+        entry_bar = bars[self.entry_timeframe]
+        entry_seconds = self._timeframe_to_seconds(self.entry_timeframe)
+        entry_timestamp = int(entry_bar.bar_time.timestamp())
+        for timeframe in self.required_timeframes:
+            if timeframe == self.entry_timeframe:
+                continue
+
+            higher_bar = bars[timeframe]
+            higher_seconds = self._timeframe_to_seconds(timeframe)
+            if higher_seconds < entry_seconds or higher_seconds % entry_seconds != 0:
+                return False
+
+            parent_period_start = (entry_timestamp // higher_seconds) * higher_seconds
+            if int(higher_bar.bar_time.timestamp()) != parent_period_start:
+                return False
+
+        return True
+
+    def _timeframe_to_seconds(self, timeframe: str) -> int:
+        """Convert a compact timeframe string like 15m or 1h into seconds."""
+
+        if timeframe.endswith("m"):
+            return int(timeframe[:-1]) * 60
+        if timeframe.endswith("h"):
+            return int(timeframe[:-1]) * 3600
+        raise ValueError(f"unsupported timeframe format: {timeframe}")
 
 
 @dataclass(frozen=True, slots=True)

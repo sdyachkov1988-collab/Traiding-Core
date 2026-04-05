@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from trading_core.contracts.guards import PreExecutionGuard
 from trading_core.contracts.orders import OrderIntentBuilder
@@ -26,11 +27,23 @@ class CloseIntentRouter:
     def route(
         self,
         close_intent: CloseIntent,
+        current_position_quantity: Decimal,
         instrument_spec: InstrumentExecutionSpec,
         execution_basis: ExecutionConstraintBasis,
         admissibility_basis: ExecutionAdmissibilityBasis,
     ) -> CloseRoutingResult:
         """Return an explicit routing outcome for a position-originated close intent."""
+
+        if current_position_quantity <= Decimal("0"):
+            return self._trigger_safe_mode(
+                close_intent=close_intent,
+                reason="no_position_to_close",
+            )
+        if close_intent.quantity > current_position_quantity:
+            return self._trigger_safe_mode(
+                close_intent=close_intent,
+                reason="close_quantity_exceeds_current_position_quantity",
+            )
 
         # Minimal Core v1 position routing is spot-oriented: closing a live
         # position means reducing it with a SELL order through the normal seams.
@@ -71,14 +84,29 @@ class CloseIntentRouter:
                 admitted_order_id=admitted_order.admitted_order_id,
             )
 
+        return self._trigger_safe_mode(
+            close_intent=close_intent,
+            reason=guard_outcome.reason or "close_routing_guard_rejected",
+            order_intent_id=order_intent.order_intent_id,
+        )
+
+    def _trigger_safe_mode(
+        self,
+        *,
+        close_intent: CloseIntent,
+        reason: str,
+        order_intent_id: str | None = None,
+    ) -> CloseRoutingResult:
+        """Classify an unknown position path and return an explicit safe-mode result."""
+
         _, transition = self.classifier.classify_unknown_position(
             instrument_id=close_intent.instrument.instrument_id,
-            reason=guard_outcome.reason or "close_routing_guard_rejected",
+            reason=reason,
         )
         self.classifier.apply_transition(transition)
         return CloseRoutingResult.create(
             close_intent_id=close_intent.intent_id,
             verdict=CloseRoutingVerdict.SAFE_MODE_TRIGGERED,
-            order_intent_id=order_intent.order_intent_id,
-            reason=guard_outcome.reason or transition.reason,
+            order_intent_id=order_intent_id,
+            reason=reason,
         )

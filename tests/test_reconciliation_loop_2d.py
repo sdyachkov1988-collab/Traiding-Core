@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 
 from trading_core.domain import (
     ReconciliationMode,
     ReconciliationOutcome,
     ReconciliationRequest,
     ReconciliationTrigger,
-    StartupReconciliationVerdict,
+    ReconciliationVerdict,
     SystemMode,
 )
 from trading_core.reconciliation import RecoveryCoordinator, SourceOfTruthPolicy
@@ -51,7 +51,7 @@ def test_reconciliation_outcome_create_preserves_conflict_flag() -> None:
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=StartupReconciliationVerdict.MISMATCHED,
+        verdict=ReconciliationVerdict.MISMATCHED,
         conflicts_with_active_trading=True,
         reason="position_conflict",
     )
@@ -105,7 +105,7 @@ def test_recovery_coordinator_process_outcome_with_conflict_returns_safe_mode_tr
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=StartupReconciliationVerdict.MISMATCHED,
+        verdict=ReconciliationVerdict.MISMATCHED,
         conflicts_with_active_trading=True,
         reason="position_conflict",
     )
@@ -116,6 +116,49 @@ def test_recovery_coordinator_process_outcome_with_conflict_returns_safe_mode_tr
     assert transition.to_mode == SystemMode.SAFE_MODE
 
 
+def test_recovery_coordinator_process_outcome_with_conflict_blocks_trading() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.PERIODIC,
+        verdict=ReconciliationVerdict.MISMATCHED,
+        conflicts_with_active_trading=True,
+        reason="position_conflict",
+        instrument_id="btc-usdt",
+    )
+
+    coordinator.process_outcome(outcome)
+
+    assert classifier.current_mode != SystemMode.NORMAL
+    assert classifier.is_trading_allowed() is False
+
+
+def test_recovery_coordinator_applies_returned_transition_to_classifier_mode() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.PERIODIC,
+        verdict=ReconciliationVerdict.MISMATCHED,
+        conflicts_with_active_trading=True,
+        reason="position_conflict",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert classifier.current_mode == transition.to_mode
+    assert classifier.current_mode == SystemMode.SAFE_MODE
+
+
 def test_recovery_coordinator_process_outcome_without_conflict_returns_none() -> None:
     coordinator = RecoveryCoordinator(
         source_of_truth=SourceOfTruthPolicy(),
@@ -124,7 +167,7 @@ def test_recovery_coordinator_process_outcome_without_conflict_returns_none() ->
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=StartupReconciliationVerdict.MATCHED,
+        verdict=ReconciliationVerdict.MATCHED,
         conflicts_with_active_trading=False,
     )
 
@@ -141,6 +184,30 @@ def test_reconciliation_mode_has_three_expected_values() -> None:
     assert ReconciliationMode.STARTUP.value == "startup"
     assert ReconciliationMode.PERIODIC.value == "periodic"
     assert ReconciliationMode.ON_ERROR.value == "on_error"
+
+
+def test_reconciliation_verdict_excludes_startup_only_local_state_missing() -> None:
+    assert ReconciliationVerdict.MATCHED.value == "matched"
+    assert ReconciliationVerdict.MISMATCHED.value == "mismatched"
+    assert "local_state_missing" not in {verdict.value for verdict in ReconciliationVerdict}
+
+
+def test_reconciliation_outcome_rejects_naive_resolved_at_datetime() -> None:
+    try:
+        ReconciliationOutcome(
+            outcome_id="recon_out_123",
+            request_id="recon_req_123",
+            mode=ReconciliationMode.PERIODIC,
+            verdict=ReconciliationVerdict.MATCHED,
+            instrument_id="btc-usdt",
+            conflicts_with_active_trading=False,
+            reason=None,
+            resolved_at=datetime(2026, 1, 1, 12, 0, 0),
+        )
+    except ValueError as exc:
+        assert str(exc) == "resolved_at must be timezone-aware UTC"
+    else:
+        raise AssertionError("Expected naive resolved_at to be rejected")
 
 
 def test_reconciliation_trigger_has_four_expected_values() -> None:
