@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+from decimal import Decimal
+
+from trading_core.domain import OrderSide
+from trading_core.domain.strategy import NoAction, StrategyIntent
+from trading_core.input import DictEventNormalizer, SimpleMarketContextAssembler
+from trading_core.strategy import BarDirectionStrategy
+
+
+def build_context(*, open_value: str, close_value: str):
+    normalizer = DictEventNormalizer()
+    assembler = SimpleMarketContextAssembler(
+        entry_timeframe="15m",
+        timeframe_set=("15m", "1h"),
+        alignment_policy="closed-bars-only",
+    )
+    event = normalizer.normalize(
+        {
+            "instrument_id": "btc-usdt",
+            "symbol": "BTCUSDT",
+            "venue": "binance",
+            "event_kind": "bar",
+            "source": "test-feed",
+            "payload": {
+                "timeframe": "15m",
+                "open": open_value,
+                "close": close_value,
+            },
+        }
+    )
+    return assembler.assemble(event)
+
+
+def test_bar_direction_strategy_returns_buy_intent_for_green_bar() -> None:
+    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.001"))
+    context = build_context(open_value="100", close_value="102")
+
+    result = strategy.evaluate(context)
+
+    assert isinstance(result, StrategyIntent)
+    assert result.side == OrderSide.BUY
+    assert result.strategy_name == "bar_direction"
+
+
+def test_bar_direction_strategy_returns_sell_intent_for_red_bar() -> None:
+    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.001"))
+    context = build_context(open_value="100", close_value="98")
+
+    result = strategy.evaluate(context)
+
+    assert isinstance(result, StrategyIntent)
+    assert result.side == OrderSide.SELL
+
+
+def test_bar_direction_strategy_returns_no_action_for_small_bar_body() -> None:
+    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.01"))
+    context = build_context(open_value="100", close_value="100.2")
+
+    result = strategy.evaluate(context)
+
+    assert isinstance(result, NoAction)
+    assert result.reason == "bar_body_too_small"
+
+
+def test_bar_direction_strategy_returns_no_action_for_missing_values() -> None:
+    normalizer = DictEventNormalizer()
+    assembler = SimpleMarketContextAssembler()
+    strategy = BarDirectionStrategy()
+
+    event = normalizer.normalize(
+        {
+            "instrument_id": "btc-usdt",
+            "symbol": "BTCUSDT",
+            "venue": "binance",
+            "event_kind": "bar",
+            "source": "test-feed",
+            "payload": {"timeframe": "15m", "close": "100"},
+        }
+    )
+    context = assembler.assemble(event)
+    result = strategy.evaluate(context)
+
+    assert isinstance(result, NoAction)
+    assert result.reason == "missing_open_or_close"

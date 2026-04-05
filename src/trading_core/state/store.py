@@ -1,0 +1,149 @@
+"""Local state store implementation for G1."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
+
+from trading_core.domain.common import InstrumentRef
+from trading_core.domain.portfolio_state import PortfolioState, Position
+from trading_core.domain.state import PersistedStateSnapshot
+
+
+class JsonFileStateStore:
+    """Persist the latest local portfolio snapshot to a JSON file."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+
+    def save(self, portfolio_state: PortfolioState) -> PersistedStateSnapshot:
+        """Persist the portfolio snapshot as the locally owned state view."""
+
+        snapshot = PersistedStateSnapshot.create(
+            portfolio_state=portfolio_state,
+            metadata={
+                "storage_format": "json",
+                "accounting_policy": "assembly_level_fee_in_cost_basis",
+            },
+        )
+        self._write_snapshot(snapshot)
+        return snapshot
+
+    def save_with_fill_marker(
+        self,
+        portfolio_state: PortfolioState,
+        processed_fill_id: str,
+    ) -> PersistedStateSnapshot:
+        """Persist the portfolio snapshot and processed fill marker atomically."""
+
+        snapshot = PersistedStateSnapshot.create(
+            portfolio_state=portfolio_state,
+            last_processed_fill_id=processed_fill_id,
+            metadata={
+                "storage_format": "json",
+                "accounting_policy": "assembly_level_fee_in_cost_basis",
+            },
+        )
+        self._write_snapshot(snapshot)
+        return snapshot
+
+    def load_latest(self) -> PersistedStateSnapshot | None:
+        """Load the latest locally persisted portfolio snapshot, if any."""
+
+        if not self._path.exists():
+            return None
+
+        payload = json.loads(self._path.read_text(encoding="utf-8"))
+        return self._deserialize_snapshot(payload)
+
+    def _write_snapshot(self, snapshot: PersistedStateSnapshot) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        payload = self._serialize_snapshot(snapshot)
+        temp_path = self._path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        temp_path.replace(self._path)
+
+    def _serialize_snapshot(self, snapshot: PersistedStateSnapshot) -> dict[str, object]:
+        positions = {}
+        for instrument_id, position in snapshot.portfolio_state.positions.items():
+            positions[instrument_id] = {
+                "position_id": position.position_id,
+                "instrument": {
+                    "instrument_id": position.instrument.instrument_id,
+                    "symbol": position.instrument.symbol,
+                    "venue": position.instrument.venue,
+                    "market_type": position.instrument.market_type,
+                },
+                "quantity": str(position.quantity),
+                "average_entry_price": str(position.average_entry_price),
+                "realized_pnl": str(position.realized_pnl),
+                "updated_at": position.updated_at.isoformat(),
+                "metadata": dict(position.metadata),
+            }
+
+        return {
+            "snapshot_id": snapshot.snapshot_id,
+            "saved_at": snapshot.saved_at.isoformat(),
+            "last_processed_fill_id": snapshot.last_processed_fill_id,
+            "metadata": dict(snapshot.metadata),
+            "portfolio_state": {
+                "portfolio_state_id": snapshot.portfolio_state.portfolio_state_id,
+                "cash_balance": str(snapshot.portfolio_state.cash_balance),
+                "realized_pnl": str(snapshot.portfolio_state.realized_pnl),
+                "updated_at": snapshot.portfolio_state.updated_at.isoformat(),
+                "metadata": dict(snapshot.portfolio_state.metadata),
+                "positions": positions,
+            },
+        }
+
+    def _deserialize_snapshot(self, payload: dict[str, object]) -> PersistedStateSnapshot:
+        raw_portfolio = payload["portfolio_state"]
+        if not isinstance(raw_portfolio, dict):
+            raise TypeError(f"expected dict, got {type(raw_portfolio).__name__}")
+        raw_positions = raw_portfolio["positions"]
+        if not isinstance(raw_positions, dict):
+            raise TypeError(f"expected dict, got {type(raw_positions).__name__}")
+
+        positions: dict[str, Position] = {}
+        for instrument_id, raw_position in raw_positions.items():
+            if not isinstance(raw_position, dict):
+                raise TypeError(f"expected dict, got {type(raw_position).__name__}")
+            raw_instrument = raw_position["instrument"]
+            if not isinstance(raw_instrument, dict):
+                raise TypeError(f"expected dict, got {type(raw_instrument).__name__}")
+            positions[str(instrument_id)] = Position(
+                position_id=str(raw_position["position_id"]),
+                instrument=InstrumentRef(
+                    instrument_id=str(raw_instrument["instrument_id"]),
+                    symbol=str(raw_instrument["symbol"]),
+                    venue=str(raw_instrument["venue"]),
+                    market_type=str(raw_instrument["market_type"]),
+                ),
+                quantity=Decimal(str(raw_position["quantity"])),
+                average_entry_price=Decimal(str(raw_position["average_entry_price"])),
+                realized_pnl=Decimal(str(raw_position["realized_pnl"])),
+                updated_at=datetime.fromisoformat(str(raw_position["updated_at"])),
+                metadata=dict(raw_position["metadata"]),
+            )
+
+        portfolio_state = PortfolioState(
+            portfolio_state_id=str(raw_portfolio["portfolio_state_id"]),
+            cash_balance=Decimal(str(raw_portfolio["cash_balance"])),
+            realized_pnl=Decimal(str(raw_portfolio["realized_pnl"])),
+            positions=positions,
+            updated_at=datetime.fromisoformat(str(raw_portfolio["updated_at"])),
+            metadata=dict(raw_portfolio["metadata"]),
+        )
+        return PersistedStateSnapshot(
+            snapshot_id=str(payload["snapshot_id"]),
+            portfolio_state=portfolio_state,
+            saved_at=datetime.fromisoformat(str(payload["saved_at"])),
+            last_processed_fill_id=(
+                None
+                if payload.get("last_processed_fill_id") is None
+                else str(payload["last_processed_fill_id"])
+            ),
+            metadata=dict(payload["metadata"]),
+        )

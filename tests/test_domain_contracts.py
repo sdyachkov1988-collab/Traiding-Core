@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+from dataclasses import is_dataclass
+from datetime import timezone
+from decimal import Decimal
+
+import pytest
+
+from trading_core.domain import (
+    EventKind,
+    InstrumentRef,
+    MarketContext,
+    MarketEvent,
+    OrderIntent,
+    OrderSide,
+    OrderType,
+    RiskDecision,
+    RiskVerdict,
+    StrategyIntent,
+    TimeInForce,
+)
+
+
+def test_market_event_create_produces_timezone_aware_values() -> None:
+    instrument = InstrumentRef(instrument_id="btc-usdt", symbol="BTCUSDT", venue="binance")
+    event = MarketEvent.create(
+        instrument=instrument,
+        event_kind=EventKind.BAR,
+        payload={"timeframe": "1m"},
+        source="test-feed",
+    )
+
+    assert event.event_id.startswith("evt_")
+    assert event.event_time.tzinfo == timezone.utc
+    assert event.observed_at.tzinfo == timezone.utc
+
+
+def test_market_context_create_keeps_phase_scoped_shape() -> None:
+    instrument = InstrumentRef(instrument_id="btc-usdt", symbol="BTCUSDT", venue="binance")
+    event = MarketEvent.create(
+        instrument=instrument,
+        event_kind=EventKind.BAR,
+        payload={"timeframe": "1m"},
+        source="test-feed",
+    )
+
+    context = MarketContext.create(
+        instrument=instrument,
+        entry_timeframe="15m",
+        timeframe_set=("15m", "1h"),
+        latest_event=event,
+        readiness_flags={"entry_ready": True, "htf_ready": True},
+        alignment_policy="closed-bars-only",
+    )
+
+    assert context.context_id.startswith("ctx_")
+    assert context.latest_event is event
+    assert context.readiness_flags["entry_ready"] is True
+
+
+def test_strategy_risk_order_chain_has_distinct_entities() -> None:
+    instrument = InstrumentRef(instrument_id="btc-usdt", symbol="BTCUSDT", venue="binance")
+    intent = StrategyIntent.create(
+        instrument=instrument,
+        side=OrderSide.BUY,
+        thesis="breakout",
+        confidence=Decimal("0.75"),
+        strategy_name="test_strategy",
+        context_id="ctx_123",
+    )
+    decision = RiskDecision.create(
+        verdict=RiskVerdict.APPROVED,
+        strategy_intent_id=intent.intent_id,
+        instrument=instrument,
+        side=intent.side,
+        approved_quantity=Decimal("0.010"),
+    )
+    order_intent = OrderIntent.create(
+        risk_decision_id=decision.risk_decision_id,
+        instrument=instrument,
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=Decimal("0.010"),
+        limit_price=Decimal("65000"),
+        time_in_force=TimeInForce.GTC,
+    )
+
+    assert intent.intent_id.startswith("intent_")
+    assert decision.risk_decision_id.startswith("risk_")
+    assert order_intent.order_intent_id.startswith("ordint_")
+    assert decision.strategy_intent_id == intent.intent_id
+    assert decision.instrument == instrument
+    assert decision.side == intent.side
+    assert order_intent.risk_decision_id == decision.risk_decision_id
+
+
+def test_core_entities_are_dataclasses() -> None:
+    assert is_dataclass(MarketEvent)
+    assert is_dataclass(MarketContext)
+    assert is_dataclass(StrategyIntent)
+    assert is_dataclass(RiskDecision)
+    assert is_dataclass(OrderIntent)
+
+
+def test_strategy_intent_rejects_out_of_range_confidence() -> None:
+    instrument = InstrumentRef(instrument_id="btc-usdt", symbol="BTCUSDT", venue="binance")
+
+    with pytest.raises(ValueError):
+        StrategyIntent.create(
+            instrument=instrument,
+            side=OrderSide.BUY,
+            thesis="test",
+            confidence=Decimal("-0.1"),
+            strategy_name="test",
+            context_id="ctx_123",
+        )
+
+    with pytest.raises(ValueError):
+        StrategyIntent.create(
+            instrument=instrument,
+            side=OrderSide.BUY,
+            thesis="test",
+            confidence=Decimal("1.1"),
+            strategy_name="test",
+            context_id="ctx_123",
+        )

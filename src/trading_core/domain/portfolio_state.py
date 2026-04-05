@@ -1,0 +1,68 @@
+"""Position and portfolio truth for the first fill-driven spine."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
+from typing import Mapping
+
+from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+
+
+@dataclass(frozen=True, slots=True)
+class Position:
+    """Minimal position truth derived only from fills."""
+
+    position_id: str
+    instrument: InstrumentRef
+    quantity: Decimal
+    average_entry_price: Decimal
+    realized_pnl: Decimal
+    updated_at: datetime
+    metadata: Mapping[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def empty(
+        cls,
+        *,
+        instrument: InstrumentRef,
+        metadata: Mapping[str, str] | None = None,
+    ) -> "Position":
+        return cls(
+            position_id=new_internal_id("pos"),
+            instrument=instrument,
+            quantity=Decimal("0"),
+            average_entry_price=Decimal("0"),
+            realized_pnl=Decimal("0"),
+            updated_at=utc_now(),
+            metadata=dict(metadata or {}),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioState:
+    """Minimal portfolio truth for Minimal Core v1."""
+
+    portfolio_state_id: str
+    cash_balance: Decimal
+    realized_pnl: Decimal
+    positions: Mapping[str, Position]
+    updated_at: datetime
+    metadata: Mapping[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def empty(
+        cls,
+        *,
+        cash_balance: Decimal,
+        metadata: Mapping[str, str] | None = None,
+    ) -> "PortfolioState":
+        return cls(
+            portfolio_state_id=new_internal_id("portfolio"),
+            cash_balance=cash_balance,
+            realized_pnl=Decimal("0"),
+            positions={},
+            updated_at=utc_now(),
+            metadata=dict(metadata or {}),
+        )
