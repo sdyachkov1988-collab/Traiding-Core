@@ -15,6 +15,9 @@ class CloseRoutingVerdict(StrEnum):
 
     ADMITTED = "admitted"
     REJECTED = "rejected"
+    GUARD_REJECTED = "guard_rejected"
+    EXECUTION_REJECTED = "execution_rejected"
+    RECONCILE_REQUIRED = "reconcile_required"
     SAFE_MODE_TRIGGERED = "safe_mode_triggered"
 
 

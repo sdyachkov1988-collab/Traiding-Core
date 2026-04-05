@@ -35,10 +35,10 @@ class TimeInForce(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class OrderIntent:
-    """Executable intent produced after risk approval."""
+    """Executable intent produced after risk approval or explicit close routing."""
 
     order_intent_id: str
-    risk_decision_id: str
+    risk_decision_id: str | None
     instrument: InstrumentRef
     side: OrderSide
     order_type: OrderType
@@ -55,7 +55,7 @@ class OrderIntent:
     def create(
         cls,
         *,
-        risk_decision_id: str,
+        risk_decision_id: str | None,
         instrument: InstrumentRef,
         side: OrderSide,
         order_type: OrderType,
@@ -64,7 +64,7 @@ class OrderIntent:
         limit_price: Decimal | None = None,
         metadata: Mapping[str, str] | None = None,
     ) -> "OrderIntent":
-        """Build an executable order intent downstream of risk approval."""
+        """Build an executable order intent downstream of risk or close routing."""
 
         return cls(
             order_intent_id=new_internal_id("ordint"),

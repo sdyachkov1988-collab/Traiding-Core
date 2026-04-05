@@ -45,10 +45,12 @@ class RecordingExecutionAdapter:
 
     def __init__(self) -> None:
         self.submitted_order_ids: list[str] = []
+        self.submitted_orders: list[AdmittedOrder] = []
         self._delegate = MockExecutionAdapter(accept_orders=True)
 
     def submit(self, admitted_order: AdmittedOrder) -> tuple[ExecutionReport, ...]:
         self.submitted_order_ids.append(admitted_order.admitted_order_id)
+        self.submitted_orders.append(admitted_order)
         return self._delegate.submit(admitted_order)
 
 
@@ -193,6 +195,33 @@ def test_close_route_reaches_execution_boundary_only_through_normal_path() -> No
     assert execution_coordinator.submitted_order_ids == [result.admitted_order_id]
 
 
+def test_close_route_does_not_fake_strategy_or_risk_lineage() -> None:
+    execution_coordinator = RecordingExecutionAdapter()
+    router, _ = router_with_classifier(execution_coordinator)
+    close_intent = CloseIntent.create(
+        instrument=instrument(),
+        position_id="pos_123",
+        quantity=Decimal("0.10"),
+        reason="protective_close",
+    )
+
+    result = router.route(
+        close_intent=close_intent,
+        current_position_quantity=Decimal("0.10"),
+        instrument_spec=permissive_builder_spec(),
+        execution_basis=execution_basis(),
+        admissibility_basis=admissibility_basis(),
+    )
+
+    submitted_order = execution_coordinator.submitted_orders[0]
+
+    assert result.verdict == CloseRoutingVerdict.ADMITTED
+    assert submitted_order.order_intent.risk_decision_id is None
+    assert submitted_order.order_intent.metadata["origin"] == "position_close"
+    assert submitted_order.order_intent.metadata["close_intent_id"] == close_intent.intent_id
+    assert "strategy_intent_id" not in submitted_order.order_intent.metadata
+
+
 def test_invalid_close_quantity_triggers_safe_mode_path() -> None:
     router, classifier = router_with_classifier()
     close_intent = CloseIntent.create(
@@ -210,12 +239,9 @@ def test_invalid_close_quantity_triggers_safe_mode_path() -> None:
         admissibility_basis=admissibility_basis(),
     )
 
-    assert result.verdict in (
-        CloseRoutingVerdict.REJECTED,
-        CloseRoutingVerdict.SAFE_MODE_TRIGGERED,
-    )
+    assert result.verdict == CloseRoutingVerdict.GUARD_REJECTED
     assert result.reason == "quantity_rounding_invalid"
-    assert classifier.current_mode == SystemMode.SAFE_MODE
+    assert classifier.current_mode == SystemMode.NORMAL
 
 
 def test_guard_reject_never_results_in_silent_failure() -> None:
@@ -236,10 +262,7 @@ def test_guard_reject_never_results_in_silent_failure() -> None:
     )
 
     assert isinstance(result, CloseRoutingResult)
-    assert result.verdict in (
-        CloseRoutingVerdict.REJECTED,
-        CloseRoutingVerdict.SAFE_MODE_TRIGGERED,
-    )
+    assert result.verdict == CloseRoutingVerdict.GUARD_REJECTED
     assert result.reason is not None
 
 
@@ -263,7 +286,7 @@ def test_close_routing_result_preserves_lineage() -> None:
     assert result.close_intent_id == close_intent.intent_id
 
 
-def test_router_classifies_unknown_state_after_guard_reject() -> None:
+def test_guard_reject_remains_guard_level_outcome() -> None:
     router, classifier = router_with_classifier()
     close_intent = CloseIntent.create(
         instrument=instrument(),
@@ -280,9 +303,9 @@ def test_router_classifies_unknown_state_after_guard_reject() -> None:
         admissibility_basis=admissibility_basis(),
     )
 
-    assert result.verdict == CloseRoutingVerdict.SAFE_MODE_TRIGGERED
-    assert classifier.is_trading_allowed() is False
-    assert classifier.current_mode == SystemMode.SAFE_MODE
+    assert result.verdict == CloseRoutingVerdict.GUARD_REJECTED
+    assert classifier.is_trading_allowed() is True
+    assert classifier.current_mode == SystemMode.NORMAL
 
 
 def test_close_intent_router_matches_protocol() -> None:
@@ -291,7 +314,7 @@ def test_close_intent_router_matches_protocol() -> None:
     assert isinstance(router, CloseIntentRouterProtocol)
 
 
-def test_close_router_triggers_safe_mode_when_no_position_is_available() -> None:
+def test_close_router_rejects_when_no_position_is_available() -> None:
     router, classifier = router_with_classifier()
     close_intent = CloseIntent.create(
         instrument=instrument(),
@@ -308,12 +331,12 @@ def test_close_router_triggers_safe_mode_when_no_position_is_available() -> None
         admissibility_basis=admissibility_basis(),
     )
 
-    assert result.verdict == CloseRoutingVerdict.SAFE_MODE_TRIGGERED
+    assert result.verdict == CloseRoutingVerdict.REJECTED
     assert result.reason == "no_position_to_close"
-    assert classifier.current_mode == SystemMode.SAFE_MODE
+    assert classifier.current_mode == SystemMode.NORMAL
 
 
-def test_execution_reject_on_close_route_triggers_explicit_safe_mode_path() -> None:
+def test_execution_reject_on_close_route_remains_execution_level_outcome() -> None:
     router, classifier = router_with_classifier(MockExecutionAdapter(accept_orders=False))
     close_intent = CloseIntent.create(
         instrument=instrument(),
@@ -330,9 +353,9 @@ def test_execution_reject_on_close_route_triggers_explicit_safe_mode_path() -> N
         admissibility_basis=admissibility_basis(),
     )
 
-    assert result.verdict == CloseRoutingVerdict.SAFE_MODE_TRIGGERED
+    assert result.verdict == CloseRoutingVerdict.EXECUTION_REJECTED
     assert result.reason == "adapter_rejected_submission"
-    assert classifier.current_mode == SystemMode.SAFE_MODE
+    assert classifier.current_mode == SystemMode.NORMAL
 
 
 def test_missing_execution_confirmation_on_close_route_triggers_explicit_reconcile_path() -> None:
@@ -352,7 +375,7 @@ def test_missing_execution_confirmation_on_close_route_triggers_explicit_reconci
         admissibility_basis=admissibility_basis(),
     )
 
-    assert result.verdict == CloseRoutingVerdict.REJECTED
+    assert result.verdict == CloseRoutingVerdict.RECONCILE_REQUIRED
     assert result.reason == "execution_confirmation_missing"
     assert classifier.current_mode == SystemMode.READ_ONLY
     assert classifier.is_trading_allowed() is False

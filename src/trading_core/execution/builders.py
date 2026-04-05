@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_DOWN
 
+from trading_core.domain.close_intent import CloseIntent
 from trading_core.domain.instruments import ExecutionConstraintBasis, InstrumentExecutionSpec
 from trading_core.domain.orders import OrderIntent, OrderSide, OrderType, TimeInForce
 from trading_core.domain.risk import RiskDecision, RiskVerdict
@@ -56,6 +57,47 @@ class SimpleOrderIntentBuilder:
             time_in_force=time_in_force,
             limit_price=limit_price,
             metadata={"strategy_intent_id": decision.strategy_intent_id},
+        )
+
+    def build_close_order(
+        self,
+        close_intent: CloseIntent,
+        instrument_spec: InstrumentExecutionSpec,
+        execution_basis: ExecutionConstraintBasis,
+    ) -> OrderIntent:
+        """Build an order intent for a position-originated close route without fake strategy/risk lineage."""
+
+        order_type = self._choose_order_type(instrument_spec)
+        time_in_force = self._choose_time_in_force(instrument_spec)
+        quantity = close_intent.quantity.quantize(
+            instrument_spec.quantity_step,
+            rounding=ROUND_DOWN,
+        )
+        if quantity < instrument_spec.min_order_quantity:
+            raise ValueError("Rounded quantity fell below instrument minimum quantity")
+        limit_price = None
+        if order_type is OrderType.LIMIT:
+            limit_price = self._build_limit_price(
+                reference_price=execution_basis.reference_price,
+                offset=execution_basis.preferred_limit_offset,
+                price_step=instrument_spec.price_step,
+                side=OrderSide.SELL,
+            )
+
+        return OrderIntent.create(
+            risk_decision_id=None,
+            instrument=close_intent.instrument,
+            side=OrderSide.SELL,
+            order_type=order_type,
+            quantity=quantity,
+            time_in_force=time_in_force,
+            limit_price=limit_price,
+            metadata={
+                "origin": "position_close",
+                "close_intent_id": close_intent.intent_id,
+                "position_id": close_intent.position_id,
+                "close_reason": close_intent.reason,
+            },
         )
 
     def _choose_order_type(self, instrument_spec: InstrumentExecutionSpec) -> OrderType:
