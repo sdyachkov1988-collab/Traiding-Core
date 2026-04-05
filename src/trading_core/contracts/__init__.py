@@ -8,6 +8,7 @@ from trading_core.contracts.guards import PreExecutionGuard
 from trading_core.contracts.input import EventNormalizer, MarketContextAssembler
 from trading_core.contracts.orders import OrderIntentBuilder
 from trading_core.contracts.reconciliation import StartupReconciler
+from trading_core.contracts.recovery import UnknownStateClassifierProtocol
 from trading_core.contracts.risk import RiskEvaluator
 from trading_core.contracts.strategy import Strategy
 from trading_core.contracts.state import StateStore
@@ -27,4 +28,5 @@ __all__ = [
     "StateStore",
     "Strategy",
     "TimeframeContextProvider",
+    "UnknownStateClassifierProtocol",
 ]

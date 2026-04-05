@@ -25,6 +25,12 @@ from trading_core.domain.risk import (
 from trading_core.domain.state import PersistedStateSnapshot
 from trading_core.domain.strategy import NoAction, StrategyIntent
 from trading_core.domain.timeframe import ClosedBar, TimeframeContext, TimeframeSyncEvent
+from trading_core.domain.unknown import (
+    SystemMode,
+    SystemModeTransition,
+    UnknownStateKind,
+    UnknownStateRecord,
+)
 
 __all__ = [
     "AdmittedOrder",
@@ -59,7 +65,11 @@ __all__ = [
     "StartupReconciliationResult",
     "StartupReconciliationVerdict",
     "StrategyIntent",
+    "SystemMode",
+    "SystemModeTransition",
     "TimeInForce",
     "TimeframeContext",
     "TimeframeSyncEvent",
+    "UnknownStateKind",
+    "UnknownStateRecord",
 ]

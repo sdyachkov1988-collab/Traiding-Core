@@ -7,7 +7,14 @@ from trading_core.context.assembler import TimeframeContextAssembler
 from trading_core.context.gate import ContextGate
 from trading_core.context.policies import BarAlignmentPolicy, ClosedBarPolicy, FreshnessPolicy
 from trading_core.context.store import InstrumentTimeframeStore
-from trading_core.domain import GateOutcome, GateVerdict, OrderSide, StrategyIntent, TimeframeSyncEvent
+from trading_core.domain import (
+    GateOutcome,
+    GateVerdict,
+    InstrumentRef,
+    OrderSide,
+    StrategyIntent,
+    TimeframeSyncEvent,
+)
 from trading_core.domain.common import utc_now
 from trading_core.domain.timeframe import ClosedBar, TimeframeContext
 
@@ -115,23 +122,21 @@ def test_gate_verdict_strenum_values_are_correct() -> None:
 
 
 def test_admitted_context_can_flow_into_strategy_intent() -> None:
-    class LocalTimeframeStrategy:
-        def evaluate(self, context: TimeframeContext) -> StrategyIntent:
-            entry_bar = context.bars[context.entry_timeframe]
-            side = OrderSide.BUY if entry_bar.close > entry_bar.open else OrderSide.SELL
-            return StrategyIntent.create(
-                instrument=type("Instrument", (), {
-                    "instrument_id": context.instrument_id,
-                    "symbol": "BTCUSDT",
-                    "venue": "binance",
-                    "market_type": "spot",
-                })(),
-                side=side,
-                thesis="mtf_gate_admitted",
-                confidence=Decimal("0.5"),
-                strategy_name="local_timeframe_strategy",
-                context_id=context.context_id,
-            )
+    def evaluate_timeframe_context(context: TimeframeContext) -> StrategyIntent:
+        entry_bar = context.bars[context.entry_timeframe]
+        side = OrderSide.BUY if entry_bar.close > entry_bar.open else OrderSide.SELL
+        return StrategyIntent.create(
+            instrument=InstrumentRef(
+                instrument_id=context.instrument_id,
+                symbol="BTCUSDT",
+                venue="binance",
+            ),
+            side=side,
+            thesis="mtf_gate_admitted",
+            confidence=Decimal("0.5"),
+            strategy_name="inline_timeframe_strategy",
+            context_id=context.context_id,
+        )
 
     store = InstrumentTimeframeStore("btc-usdt")
     for timeframe in ("15m", "1h"):
@@ -156,7 +161,7 @@ def test_admitted_context_can_flow_into_strategy_intent() -> None:
 
     assert context is not None
     outcome = gate.check(context)
-    strategy_intent = LocalTimeframeStrategy().evaluate(context)
+    strategy_intent = evaluate_timeframe_context(context)
 
     assert outcome.verdict == GateVerdict.ADMITTED
     assert isinstance(strategy_intent, StrategyIntent)
