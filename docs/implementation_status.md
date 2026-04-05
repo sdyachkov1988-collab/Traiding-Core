@@ -2,12 +2,26 @@
 
 ## Current status
 
-The repository now contains two layers of reality:
+The repository now contains three categories of code:
 
-- a closed and remediated `Minimal Core v1` vertical slice;
-- explicit next-stage seams from Tracks B and C that are present in code but not automatically promoted into the canonical Wave 1 contour.
+- an active Wave 1 working contour
+- experimental next-stage seams implemented in the repository
+- reserved areas that remain outside current scope
 
-Closed Wave 1 slice:
+## Active Wave 1 contour
+
+The active acceptance path is `MTF-first` and phase-correct for Wave 1:
+
+`TimeframeSyncEvent -> Wave1MtfContext -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+
+Meaning:
+
+- the active path no longer uses the legacy single-bar strategy
+- the strategy receives `entry timeframe + mandatory HTF input` through the core
+- fill identity is handled separately from order identity inside the fill processor and execution-to-fill handoff
+- the active Wave 1 contour does not require full `TimeframeContext + ContextGate` canonization
+
+## Closed Wave 1 scope
 
 - `Package A` - normalized input and early context seam
 - `Package B` - strategy decision boundary
@@ -17,35 +31,37 @@ Closed Wave 1 slice:
 - `Package F` - fill-driven state spine
 - `Package G` - local state store and startup reconciliation
 
-## Active acceptance path
+## Experimental seams
 
-The active acceptance path is now `MTF-first` and phase-correct for Wave 1:
+The following seams are implemented in the repository and covered by tests, but are not part of the Wave 1 active contour:
 
-`market input -> Wave1MtfContext -> MTF strategy -> risk -> builder -> guard -> execution -> fill -> position -> portfolio -> state -> startup reconciliation`
+- `src/trading_core/context/`
+  canonical timeframe store, `TimeframeContextAssembler`, `ContextGate`, `BarAlignmentPolicy`, `ClosedBarPolicy`, `FreshnessPolicy`
+- `src/trading_core/reconciliation/coordinator.py`
+  `RecoveryCoordinator` and non-startup reconciliation loop request handling
+- `src/trading_core/recovery/classifier.py`
+  unknown-state classifier and system-mode transitions
+- `src/trading_core/positions/close_router.py`
+  position-originated close routing contour
+- `src/trading_core/domain/reconciliation_extended.py`
+  extended reconciliation request / outcome / verdict family
 
-This is intentionally narrower than the full Wave 2 context family.
+These seams are present in code and test-covered, but should still be interpreted as next-stage prototypes rather than as mandatory Wave 1 behavior.
 
-Meaning:
+## Reserved seams outside current scope
 
-- the active path no longer uses the legacy single-bar strategy;
-- the strategy receives `entry timeframe + mandatory HTF input` through the core;
-- the active Wave 1 contour does not require full `TimeframeContext + ContextGate` canonization.
+The following remain outside current scope:
 
-## Implemented next-stage seams
+- governance layer
+- multi-instrument portfolio orchestration
+- multi-exchange orchestration
+- derivatives / leveraged products
+- full periodic / on-error reconciliation policy and governance decisions
+- production execution adapter family
 
-The following seams now exist in the repository as explicit next-stage capability:
+## Remediation outcomes
 
-- canonical timeframe store and `TimeframeContext`
-- `ContextGate`
-- unknown-state classification and system modes
-- recovery coordinator with startup / periodic / on-error request modes
-- position-originated close routing contour
-
-These are implemented and test-covered, but they should still be interpreted through the roadmap boundary, not treated as if they were always part of the original Wave 1 contour.
-
-## Track A and Track B remediation outcomes
-
-The repository also reflects the completed remediation steps from Tracks A and B:
+The repository reflects the completed remediation work from Tracks A, B, and C:
 
 - risk sizing uses `reference_price` and step-aligned base sizing
 - spot `SELL` requires a real current position basis
@@ -53,14 +69,9 @@ The repository also reflects the completed remediation steps from Tracks A and B
 - zero-quantity zombie positions are removed from portfolio truth
 - builder rechecks quantity after post-rounding alignment
 - acceptance uses a real execution-to-fill handoff helper
-- fill idempotency covers fallback replay and restart restore bridge
-- context/data integrity now includes:
-  - history-depth warmup semantics
-  - parent-period temporal alignment
-  - monotonic timeframe updates
-  - `source_event_time -> event_time`
-  - early readiness guarding in strategy evaluation
-- canonical datetime fields are now required to be UTC-aware
+- fill idempotency covers fallback replay, restart restore bridge, and mixed-source replay
+- context/data integrity includes history-depth warmup, temporal alignment, monotonic timeframe updates, `source_event_time -> event_time`, and early readiness guarding
+- canonical datetime fields are required to be UTC-aware
 
 ## Tolerance semantics
 
@@ -71,18 +82,9 @@ The repository also reflects the completed remediation steps from Tracks A and B
 
 Interpretation:
 
-- `0` means exact `Decimal` equality;
-- tolerance is not silently widened by default;
-- any relaxed comparison must be chosen explicitly by the caller.
-
-## Reserved or non-canonical interpretations
-
-The following points remain important:
-
-- full `TimeframeContext` is implemented, but not the only correct interpretation of Wave 1
-- `ContextGate` exists, but is not the mandatory active Wave 1 contour
-- hardening presence in code does not automatically make a behavior contract-canonical
-- startup-only reconciliation semantics stay distinct from non-startup reconciliation semantics
+- `0` means exact `Decimal` equality
+- tolerance is not silently widened by default
+- any relaxed comparison must be chosen explicitly by the caller
 
 ## Wave 1G acceptance checklist
 
@@ -91,11 +93,10 @@ The following points remain important:
 - startup reconciliation runs on restored state
 - execution boundary does not leak into strategy, risk, or state ownership
 - active acceptance path does not depend on the legacy single-bar strategy
+- fill identity remains separate from order identity
 
 ## Practical reading rule
 
-For current repository status:
-
-- `README.md` is the quick summary
+- [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md) is the quickest status map
 - this file is the working implementation snapshot
-- the extracted source documents in `docs/spec/` remain the reference set for roadmap meaning
+- `docs/spec/` remains the reference set for roadmap meaning

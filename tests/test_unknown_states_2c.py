@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timezone
 
+from trading_core.contracts.recovery import UnknownStateClassifierProtocol
 from trading_core.domain import (
     SystemMode,
     SystemModeTransition,
@@ -83,6 +84,12 @@ def test_classifier_marks_unknown_order_state_as_read_only() -> None:
     assert transition.to_mode == SystemMode.READ_ONLY
 
 
+def test_classifier_matches_protocol_surface() -> None:
+    classifier = UnknownStateClassifier()
+
+    assert isinstance(classifier, UnknownStateClassifierProtocol)
+
+
 def test_is_trading_allowed_only_in_normal_mode() -> None:
     classifier = UnknownStateClassifier()
 
@@ -115,6 +122,57 @@ def test_unknown_position_transition_blocks_trading_after_apply() -> None:
 
     classifier.apply_transition(transition)
 
+    assert classifier.is_trading_allowed() is False
+
+
+def test_missing_execution_confirmation_blocks_normal_continuation_after_apply() -> None:
+    classifier = UnknownStateClassifier()
+    _record, transition = classifier.classify_missing_execution_confirmation(
+        order_intent_id="ordint_123",
+        instrument_id="btc-usdt",
+    )
+
+    classifier.apply_transition(transition)
+
+    assert classifier.current_mode == SystemMode.READ_ONLY
+    assert classifier.is_trading_allowed() is False
+
+
+def test_stale_context_blocks_normal_continuation_after_apply() -> None:
+    classifier = UnknownStateClassifier()
+    _record, transition = classifier.classify_stale_context("btc-usdt")
+
+    classifier.apply_transition(transition)
+
+    assert classifier.current_mode == SystemMode.READ_ONLY
+    assert classifier.is_trading_allowed() is False
+
+
+def test_unknown_order_state_blocks_normal_continuation_after_apply() -> None:
+    classifier = UnknownStateClassifier()
+    _record, transition = classifier.classify_unknown_order_state(
+        order_intent_id="ordint_123",
+        instrument_id="btc-usdt",
+        reason="order_state_conflict",
+    )
+
+    classifier.apply_transition(transition)
+
+    assert classifier.current_mode == SystemMode.READ_ONLY
+    assert classifier.is_trading_allowed() is False
+
+
+def test_frozen_mode_is_not_decorative_and_blocks_trading() -> None:
+    classifier = UnknownStateClassifier()
+    transition = SystemModeTransition.create(
+        from_mode=SystemMode.NORMAL,
+        to_mode=SystemMode.FROZEN,
+        reason="manual_intervention_required",
+    )
+
+    classifier.apply_transition(transition)
+
+    assert classifier.current_mode == SystemMode.FROZEN
     assert classifier.is_trading_allowed() is False
 
 

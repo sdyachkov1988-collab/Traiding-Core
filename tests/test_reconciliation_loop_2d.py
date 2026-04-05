@@ -51,7 +51,7 @@ def test_reconciliation_outcome_create_preserves_conflict_flag() -> None:
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=ReconciliationVerdict.MISMATCHED,
+        verdict=ReconciliationVerdict.CONFLICTING,
         conflicts_with_active_trading=True,
         reason="position_conflict",
     )
@@ -105,7 +105,7 @@ def test_recovery_coordinator_process_outcome_with_conflict_returns_safe_mode_tr
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=ReconciliationVerdict.MISMATCHED,
+        verdict=ReconciliationVerdict.CONFLICTING,
         conflicts_with_active_trading=True,
         reason="position_conflict",
     )
@@ -125,7 +125,7 @@ def test_recovery_coordinator_process_outcome_with_conflict_blocks_trading() -> 
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=ReconciliationVerdict.MISMATCHED,
+        verdict=ReconciliationVerdict.CONFLICTING,
         conflicts_with_active_trading=True,
         reason="position_conflict",
         instrument_id="btc-usdt",
@@ -146,7 +146,7 @@ def test_recovery_coordinator_applies_returned_transition_to_classifier_mode() -
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=ReconciliationVerdict.MISMATCHED,
+        verdict=ReconciliationVerdict.CONFLICTING,
         conflicts_with_active_trading=True,
         reason="position_conflict",
         instrument_id="btc-usdt",
@@ -167,17 +167,81 @@ def test_recovery_coordinator_process_outcome_without_conflict_returns_none() ->
     outcome = ReconciliationOutcome.create(
         request_id="recon_req_123",
         mode=ReconciliationMode.PERIODIC,
-        verdict=ReconciliationVerdict.MATCHED,
+        verdict=ReconciliationVerdict.ALIGNED,
         conflicts_with_active_trading=False,
     )
 
     assert coordinator.process_outcome(outcome) is None
 
 
+def test_recovery_coordinator_treats_corrected_outcome_as_formal_non_blocking_result() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.PERIODIC,
+        verdict=ReconciliationVerdict.CORRECTED,
+        conflicts_with_active_trading=False,
+        reason="local_picture_corrected_from_external_truth",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is None
+    assert outcome.allows_normal_continuation() is True
+    assert outcome.is_conflict_bearing() is False
+    assert classifier.current_mode == SystemMode.NORMAL
+
+
+def test_recovery_coordinator_blocks_insufficient_outcome_via_read_only_path() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.ON_ERROR,
+        verdict=ReconciliationVerdict.INSUFFICIENT,
+        conflicts_with_active_trading=False,
+        reason="external_basis_insufficient",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert transition.to_mode == SystemMode.READ_ONLY
+    assert classifier.current_mode == SystemMode.READ_ONLY
+    assert classifier.is_trading_allowed() is False
+    assert outcome.allows_normal_continuation() is False
+    assert outcome.is_conflict_bearing() is True
+
+
 def test_source_of_truth_policy_blocks_trading_on_position_conflict() -> None:
     policy = SourceOfTruthPolicy()
 
     assert policy.blocks_trading_on_position_conflict() is True
+
+
+def test_source_of_truth_policy_exposes_explicit_authorities_and_layers() -> None:
+    policy = SourceOfTruthPolicy()
+
+    assert policy.authoritative_source_for_execution_facts() == "external_venue"
+    assert policy.authoritative_source_for_market_data() == "canonical_instrument_scoped_data_layer"
+    assert (
+        policy.authoritative_source_for_position_truth()
+        == "external_execution_state_via_reconciliation"
+    )
+    assert policy.local_picture_class == "local_observed_state"
+    assert policy.external_picture_class == "external_observed_state"
+    assert policy.derived_state_class == "derived_internal_state"
+    assert policy.reconciled_truth_class == "reconciliation_outcome_layer"
+    assert policy.reconciliation_outcome_is_distinct_from_observed_pictures() is True
 
 
 def test_reconciliation_mode_has_three_expected_values() -> None:
@@ -187,8 +251,10 @@ def test_reconciliation_mode_has_three_expected_values() -> None:
 
 
 def test_reconciliation_verdict_excludes_startup_only_local_state_missing() -> None:
-    assert ReconciliationVerdict.MATCHED.value == "matched"
-    assert ReconciliationVerdict.MISMATCHED.value == "mismatched"
+    assert ReconciliationVerdict.ALIGNED.value == "aligned"
+    assert ReconciliationVerdict.CORRECTED.value == "corrected"
+    assert ReconciliationVerdict.INSUFFICIENT.value == "insufficient"
+    assert ReconciliationVerdict.CONFLICTING.value == "conflicting"
     assert "local_state_missing" not in {verdict.value for verdict in ReconciliationVerdict}
 
 
@@ -198,7 +264,7 @@ def test_reconciliation_outcome_rejects_naive_resolved_at_datetime() -> None:
             outcome_id="recon_out_123",
             request_id="recon_req_123",
             mode=ReconciliationMode.PERIODIC,
-            verdict=ReconciliationVerdict.MATCHED,
+            verdict=ReconciliationVerdict.ALIGNED,
             instrument_id="btc-usdt",
             conflicts_with_active_trading=False,
             reason=None,

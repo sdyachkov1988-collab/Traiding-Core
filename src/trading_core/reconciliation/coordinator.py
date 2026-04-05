@@ -9,6 +9,7 @@ from trading_core.domain.reconciliation_extended import (
     ReconciliationOutcome,
     ReconciliationRequest,
     ReconciliationTrigger,
+    ReconciliationVerdict,
 )
 from trading_core.domain.unknown import SystemModeTransition
 from trading_core.reconciliation.source_of_truth import SourceOfTruthPolicy
@@ -62,7 +63,18 @@ class RecoveryCoordinator:
         self,
         outcome: ReconciliationOutcome,
     ) -> SystemModeTransition | None:
-        """Convert conflicting reconciliation results into safe-mode transitions."""
+        """Convert unresolved reconciliation results into formal safety-path transitions."""
+
+        if outcome.allows_normal_continuation():
+            return None
+
+        if outcome.verdict is ReconciliationVerdict.INSUFFICIENT:
+            _record, transition = self.classifier.classify_missing_execution_confirmation(
+                order_intent_id=outcome.request_id,
+                instrument_id=outcome.instrument_id or "unknown",
+            )
+            self.classifier.apply_transition(transition)
+            return transition
 
         if outcome.conflicts_with_active_trading is False:
             return None

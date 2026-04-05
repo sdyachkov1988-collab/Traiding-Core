@@ -29,8 +29,10 @@ class ReconciliationTrigger(StrEnum):
 class ReconciliationVerdict(StrEnum):
     """Loop-level reconciliation verdict without startup-only missing-state semantics."""
 
-    MATCHED = "matched"
-    MISMATCHED = "mismatched"
+    ALIGNED = "aligned"
+    CORRECTED = "corrected"
+    INSUFFICIENT = "insufficient"
+    CONFLICTING = "conflicting"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +82,22 @@ class ReconciliationOutcome:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.resolved_at, "resolved_at")
+
+    def allows_normal_continuation(self) -> bool:
+        """Return True only for outcomes that no longer carry unresolved ambiguity."""
+
+        return self.verdict in (
+            ReconciliationVerdict.ALIGNED,
+            ReconciliationVerdict.CORRECTED,
+        )
+
+    def is_conflict_bearing(self) -> bool:
+        """Return True when reconciliation still carries unresolved conflict or ambiguity."""
+
+        return self.verdict in (
+            ReconciliationVerdict.INSUFFICIENT,
+            ReconciliationVerdict.CONFLICTING,
+        )
 
     @classmethod
     def create(
