@@ -9,6 +9,7 @@ from trading_core.domain import (
     ReconciliationTrigger,
     ReconciliationVerdict,
     SystemMode,
+    UnknownStateKind,
 )
 from trading_core.reconciliation import RecoveryCoordinator, SourceOfTruthPolicy
 from trading_core.recovery import UnknownStateClassifier
@@ -220,6 +221,79 @@ def test_recovery_coordinator_blocks_insufficient_outcome_via_read_only_path() -
     assert classifier.is_trading_allowed() is False
     assert outcome.allows_normal_continuation() is False
     assert outcome.is_conflict_bearing() is True
+    assert transition.unknown_state is not None
+    assert transition.unknown_state.kind == UnknownStateKind.RECONCILIATION_INSUFFICIENT
+    assert transition.unknown_state.reason == "external_basis_insufficient"
+
+
+def test_recovery_coordinator_does_not_use_request_id_as_order_intent_id_for_insufficient_outcome() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.ON_ERROR,
+        verdict=ReconciliationVerdict.INSUFFICIENT,
+        conflicts_with_active_trading=False,
+        reason="external_basis_insufficient",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert transition.unknown_state is not None
+    assert transition.unknown_state.order_intent_id is None
+    assert transition.unknown_state.metadata["reconciliation_request_id"] == "recon_req_123"
+
+
+def test_recovery_coordinator_returns_explicit_path_for_non_active_conflict() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.PERIODIC,
+        verdict=ReconciliationVerdict.CONFLICTING,
+        conflicts_with_active_trading=False,
+        reason="position_conflict_detected",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert transition.to_mode == SystemMode.READ_ONLY
+    assert transition.unknown_state is not None
+    assert transition.unknown_state.kind == UnknownStateKind.RECONCILIATION_CONFLICT
+    assert classifier.current_mode == SystemMode.READ_ONLY
+    assert classifier.is_trading_allowed() is False
+
+
+def test_source_of_truth_policy_operationally_controls_conflict_mode() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(non_active_conflict_mode=SystemMode.SAFE_MODE),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.PERIODIC,
+        verdict=ReconciliationVerdict.CONFLICTING,
+        conflicts_with_active_trading=False,
+        reason="position_conflict_detected",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert transition.to_mode == SystemMode.SAFE_MODE
+    assert classifier.current_mode == SystemMode.SAFE_MODE
 
 
 def test_source_of_truth_policy_blocks_trading_on_position_conflict() -> None:
@@ -242,6 +316,9 @@ def test_source_of_truth_policy_exposes_explicit_authorities_and_layers() -> Non
     assert policy.derived_state_class == "derived_internal_state"
     assert policy.reconciled_truth_class == "reconciliation_outcome_layer"
     assert policy.reconciliation_outcome_is_distinct_from_observed_pictures() is True
+    assert policy.mode_for_insufficient_basis() == SystemMode.READ_ONLY
+    assert policy.mode_for_position_conflict(conflicts_with_active_trading=False) == SystemMode.READ_ONLY
+    assert policy.mode_for_position_conflict(conflicts_with_active_trading=True) == SystemMode.SAFE_MODE
 
 
 def test_reconciliation_mode_has_three_expected_values() -> None:

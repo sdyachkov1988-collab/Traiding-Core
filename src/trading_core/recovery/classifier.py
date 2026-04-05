@@ -100,6 +100,54 @@ class UnknownStateClassifier:
         )
         return record, transition
 
+    def classify_insufficient_reconciliation(
+        self,
+        *,
+        request_id: str,
+        instrument_id: str | None,
+        reason: str,
+        to_mode: SystemMode = SystemMode.READ_ONLY,
+    ) -> tuple[UnknownStateRecord, SystemModeTransition]:
+        """Classify unresolved reconciliation basis without collapsing it into execution-only meaning."""
+
+        record = UnknownStateRecord.create(
+            kind=UnknownStateKind.RECONCILIATION_INSUFFICIENT,
+            reason=reason,
+            instrument_id=instrument_id,
+            metadata={"reconciliation_request_id": request_id},
+        )
+        transition = SystemModeTransition.create(
+            from_mode=self.current_mode,
+            to_mode=to_mode,
+            reason=reason,
+            unknown_state=record,
+        )
+        return record, transition
+
+    def classify_conflicting_reconciliation(
+        self,
+        *,
+        request_id: str,
+        instrument_id: str | None,
+        reason: str,
+        to_mode: SystemMode,
+    ) -> tuple[UnknownStateRecord, SystemModeTransition]:
+        """Classify reconciliation conflict without masking it as a narrower unknown-state class."""
+
+        record = UnknownStateRecord.create(
+            kind=UnknownStateKind.RECONCILIATION_CONFLICT,
+            reason=reason,
+            instrument_id=instrument_id,
+            metadata={"reconciliation_request_id": request_id},
+        )
+        transition = SystemModeTransition.create(
+            from_mode=self.current_mode,
+            to_mode=to_mode,
+            reason=reason,
+            unknown_state=record,
+        )
+        return record, transition
+
     def is_trading_allowed(self) -> bool:
         """Trading is allowed only while the system stays in NORMAL mode."""
 

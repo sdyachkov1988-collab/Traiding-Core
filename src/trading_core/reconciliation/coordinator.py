@@ -69,19 +69,26 @@ class RecoveryCoordinator:
             return None
 
         if outcome.verdict is ReconciliationVerdict.INSUFFICIENT:
-            _record, transition = self.classifier.classify_missing_execution_confirmation(
-                order_intent_id=outcome.request_id,
-                instrument_id=outcome.instrument_id or "unknown",
+            _record, transition = self.classifier.classify_insufficient_reconciliation(
+                request_id=outcome.request_id,
+                instrument_id=outcome.instrument_id,
+                reason=outcome.reason or "reconciliation_basis_insufficient",
+                to_mode=self.source_of_truth.mode_for_insufficient_basis(),
             )
             self.classifier.apply_transition(transition)
             return transition
 
-        if outcome.conflicts_with_active_trading is False:
+        if outcome.verdict is not ReconciliationVerdict.CONFLICTING:
             return None
 
-        _record, transition = self.classifier.classify_unknown_position(
-            instrument_id=outcome.instrument_id or "unknown",
+        conflict_mode = self.source_of_truth.mode_for_position_conflict(
+            conflicts_with_active_trading=outcome.conflicts_with_active_trading,
+        )
+        _record, transition = self.classifier.classify_conflicting_reconciliation(
+            request_id=outcome.request_id,
+            instrument_id=outcome.instrument_id,
             reason=outcome.reason or "reconciliation_conflict_with_active_trading",
+            to_mode=conflict_mode,
         )
         self.classifier.apply_transition(transition)
         return transition

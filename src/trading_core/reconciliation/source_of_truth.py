@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from trading_core.domain.unknown import SystemMode
+
 
 @dataclass(frozen=True, slots=True)
 class SourceOfTruthPolicy:
@@ -16,6 +18,9 @@ class SourceOfTruthPolicy:
     execution_facts_source: str = "external_venue"
     market_data_source: str = "canonical_instrument_scoped_data_layer"
     position_truth_source: str = "external_execution_state_via_reconciliation"
+    insufficient_basis_mode: SystemMode = SystemMode.READ_ONLY
+    non_active_conflict_mode: SystemMode = SystemMode.READ_ONLY
+    active_position_conflict_mode: SystemMode = SystemMode.SAFE_MODE
 
     def authoritative_source_for_execution_facts(self) -> str:
         """Return the authoritative source for external execution facts."""
@@ -46,3 +51,19 @@ class SourceOfTruthPolicy:
         """Position conflicts block trading until an explicit resolve path."""
 
         return True
+
+    def mode_for_insufficient_basis(self) -> SystemMode:
+        """Return the minimum safe system mode for unresolved reconciliation basis."""
+
+        return self.insufficient_basis_mode
+
+    def mode_for_position_conflict(
+        self,
+        *,
+        conflicts_with_active_trading: bool,
+    ) -> SystemMode:
+        """Return the failure-path mode for a conflicting reconciliation outcome."""
+
+        if conflicts_with_active_trading:
+            return self.active_position_conflict_mode
+        return self.non_active_conflict_mode

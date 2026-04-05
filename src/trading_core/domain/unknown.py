@@ -17,6 +17,8 @@ class UnknownStateKind(StrEnum):
     UNKNOWN_POSITION_STATE = "unknown_position_state"
     STALE_CONTEXT = "stale_context"
     INCOMPLETE_EXTERNAL_CONFIRMATION = "incomplete_external_confirmation"
+    RECONCILIATION_INSUFFICIENT = "reconciliation_insufficient"
+    RECONCILIATION_CONFLICT = "reconciliation_conflict"
 
 
 class SystemMode(StrEnum):
