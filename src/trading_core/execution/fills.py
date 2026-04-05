@@ -35,6 +35,7 @@ class IdempotentFillProcessor:
                     "Duplicate external_fill_id received by FillProcessor"
                 )
             self._seen_external_ids.add(fill.external_fill_id)
+            self._seen_fill_ids.add(fill.fill_id)
             return fill
 
         fallback_key = (

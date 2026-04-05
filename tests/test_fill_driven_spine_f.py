@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -313,6 +314,23 @@ def test_fill_processor_rejects_duplicate_external_fill_id_with_different_fill_i
     fill_processor.accept(first)
     with pytest.raises(ValueError):
         fill_processor.accept(second)
+
+
+def test_fill_processor_rejects_replayed_fill_without_external_id_after_external_accept() -> None:
+    fill_processor = IdempotentFillProcessor()
+    accepted_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        external_fill_id="ext_123",
+    )
+    replayed_without_external_id = replace(accepted_fill, external_fill_id=None)
+
+    fill_processor.accept(accepted_fill)
+    with pytest.raises(ValueError, match="Duplicate fill_id"):
+        fill_processor.accept(replayed_without_external_id)
 
 
 def test_fill_processor_falls_back_to_internal_fill_id_when_external_id_missing() -> None:
