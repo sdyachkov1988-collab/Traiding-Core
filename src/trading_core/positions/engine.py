@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from trading_core.domain.close_intent import CloseIntent
 from trading_core.domain.fills import Fill
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.portfolio_state import Position
@@ -13,6 +14,30 @@ from trading_core.domain.portfolio_state import Position
 @dataclass(slots=True)
 class SpotPositionEngine:
     """Maintain minimal spot position truth from fill facts only."""
+
+    def initiate_close(
+        self,
+        current: Position,
+        *,
+        quantity: Decimal | None = None,
+        reason: str,
+    ) -> CloseIntent:
+        """Create a position-originated close intent without a new strategy cycle."""
+
+        close_quantity = current.quantity if quantity is None else quantity
+        if current.quantity <= Decimal("0"):
+            raise ValueError("no_position_to_close")
+        if close_quantity <= Decimal("0"):
+            raise ValueError("close_quantity_must_be_positive")
+        if close_quantity > current.quantity:
+            raise ValueError("close_quantity_exceeds_current_position_quantity")
+
+        return CloseIntent.create(
+            instrument=current.instrument,
+            position_id=current.position_id,
+            quantity=close_quantity,
+            reason=reason,
+        )
 
     def apply(self, current: Position | None, fill: Fill) -> Position:
         """Return the next position truth after a fill."""

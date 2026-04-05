@@ -180,7 +180,10 @@ def test_admitted_context_can_flow_into_strategy_intent() -> None:
         TimeframeSyncEvent.create(
             instrument_id="btc-usdt",
             timeframe="1h",
-            bar=make_closed_bar(timeframe="1h"),
+            bar=make_closed_bar(
+                timeframe="1h",
+                bar_time=second_entry_bar.bar_time.replace(minute=0),
+            ),
         )
     )
     context = TimeframeContextAssembler(

@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from trading_core.contracts.execution import ExecutionAdapter
 from trading_core.contracts.guards import PreExecutionGuard
 from trading_core.contracts.orders import OrderIntentBuilder
 from trading_core.domain.close_intent import CloseIntent, CloseRoutingResult, CloseRoutingVerdict
-from trading_core.domain.execution import AdmittedOrder
+from trading_core.domain.execution import AdmittedOrder, ExecutionReportKind
 from trading_core.domain.guards import ExecutionAdmissibilityBasis, GuardVerdict
 from trading_core.domain.instruments import ExecutionConstraintBasis, InstrumentExecutionSpec
 from trading_core.domain.orders import OrderSide
@@ -22,6 +23,7 @@ class CloseIntentRouter:
 
     order_builder: OrderIntentBuilder
     pre_execution_guard: PreExecutionGuard
+    execution_coordinator: ExecutionAdapter
     classifier: UnknownStateClassifier
 
     def route(
@@ -77,6 +79,31 @@ class CloseIntentRouter:
                     "position_id": close_intent.position_id,
                 },
             )
+            reports = self.execution_coordinator.submit(admitted_order)
+            if any(report.kind is ExecutionReportKind.REJECTED for report in reports):
+                return self._trigger_safe_mode(
+                    close_intent=close_intent,
+                    reason=next(
+                        (
+                            report.reason
+                            for report in reports
+                            if report.kind is ExecutionReportKind.REJECTED
+                            and report.reason is not None
+                        ),
+                        "close_execution_rejected",
+                    ),
+                    order_intent_id=order_intent.order_intent_id,
+                )
+            if not any(
+                report.kind in (ExecutionReportKind.ACCEPTED, ExecutionReportKind.ACKNOWLEDGED)
+                for report in reports
+            ):
+                return self._trigger_reconcile_path(
+                    close_intent=close_intent,
+                    reason="execution_confirmation_missing",
+                    order_intent_id=order_intent.order_intent_id,
+                    admitted_order_id=admitted_order.admitted_order_id,
+                )
             return CloseRoutingResult.create(
                 close_intent_id=close_intent.intent_id,
                 verdict=CloseRoutingVerdict.ADMITTED,
@@ -108,5 +135,28 @@ class CloseIntentRouter:
             close_intent_id=close_intent.intent_id,
             verdict=CloseRoutingVerdict.SAFE_MODE_TRIGGERED,
             order_intent_id=order_intent_id,
+            reason=reason,
+        )
+
+    def _trigger_reconcile_path(
+        self,
+        *,
+        close_intent: CloseIntent,
+        reason: str,
+        order_intent_id: str,
+        admitted_order_id: str,
+    ) -> CloseRoutingResult:
+        """Classify incomplete execution confirmation as an explicit non-silent reject path."""
+
+        _, transition = self.classifier.classify_missing_execution_confirmation(
+            order_intent_id=order_intent_id,
+            instrument_id=close_intent.instrument.instrument_id,
+        )
+        self.classifier.apply_transition(transition)
+        return CloseRoutingResult.create(
+            close_intent_id=close_intent.intent_id,
+            verdict=CloseRoutingVerdict.REJECTED,
+            order_intent_id=order_intent_id,
+            admitted_order_id=admitted_order_id,
             reason=reason,
         )
