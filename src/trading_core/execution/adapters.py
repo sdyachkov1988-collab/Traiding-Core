@@ -55,6 +55,7 @@ class MockExecutionAdapter:
         admitted_order: AdmittedOrder,
         report: ExecutionReport,
         *,
+        execution_price: Decimal | None = None,
         fee: Decimal = Decimal("0"),
     ) -> Fill:
         """Create a normalized fill fact from an accepted execution report."""
@@ -63,20 +64,29 @@ class MockExecutionAdapter:
             raise ValueError("Fill materialization requires an accepted or acknowledged report")
         if report.order_intent_id != admitted_order.order_intent.order_intent_id:
             raise ValueError("ExecutionReport does not match AdmittedOrder")
-        execution_price = admitted_order.order_intent.limit_price
-        if execution_price is None:
-            raise ValueError("MockExecutionAdapter cannot materialize a fill without execution price")
+        resolved_execution_price = admitted_order.order_intent.limit_price
+        if resolved_execution_price is None:
+            resolved_execution_price = execution_price
+        if resolved_execution_price is None:
+            raise ValueError(
+                "MockExecutionAdapter requires explicit execution_price for non-limit fill materialization"
+            )
 
         return Fill.create(
             order_intent_id=admitted_order.order_intent.order_intent_id,
             instrument=admitted_order.order_intent.instrument,
             side=admitted_order.order_intent.side,
             quantity=admitted_order.order_intent.quantity,
-            price=execution_price,
+            price=resolved_execution_price,
             fee=fee,
             external_fill_id=report.external_order_id,
             metadata={
                 "admitted_order_id": admitted_order.admitted_order_id,
                 "execution_report_id": report.report_id,
+                "execution_price_source": (
+                    "order_limit_price"
+                    if admitted_order.order_intent.limit_price is not None
+                    else "explicit_execution_price"
+                ),
             },
         )

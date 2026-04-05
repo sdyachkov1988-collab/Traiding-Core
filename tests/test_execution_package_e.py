@@ -6,10 +6,15 @@ from trading_core.domain import (
     AdmittedOrder,
     ExecutionAdmissibilityBasis,
     ExecutionConstraintBasis,
+    ExecutionReport,
     ExecutionReportKind,
+    GuardOutcome,
     GuardVerdict,
     InstrumentExecutionSpec,
     InstrumentRiskBasis,
+    InstrumentRef,
+    OrderIntent,
+    OrderSide,
     OrderType,
     PortfolioRiskBasis,
     TimeInForce,
@@ -122,3 +127,89 @@ def test_mock_execution_adapter_can_return_rejected_report_sequence() -> None:
         ExecutionReportKind.REJECTED,
     )
     assert reports[-1].reason == "adapter_rejected_submission"
+
+
+def test_mock_execution_adapter_materializes_limit_fill_from_order_limit_price() -> None:
+    adapter = MockExecutionAdapter(accept_orders=True)
+    admitted_order = build_admitted_order()
+    accepted_report = next(
+        report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.ACCEPTED
+    )
+
+    fill = adapter.materialize_fill(admitted_order, accepted_report, fee=Decimal("0.25"))
+
+    assert fill.price == admitted_order.order_intent.limit_price
+    assert fill.external_fill_id == accepted_report.external_order_id
+    assert fill.metadata["execution_price_source"] == "order_limit_price"
+    assert fill.metadata["execution_report_id"] == accepted_report.report_id
+
+
+def test_mock_execution_adapter_materializes_market_fill_from_explicit_execution_price() -> None:
+    adapter = MockExecutionAdapter(accept_orders=True)
+    market_order = OrderIntent.create(
+        risk_decision_id="risk_1",
+        instrument=InstrumentRef(
+            instrument_id="btc-usdt",
+            symbol="BTCUSDT",
+            venue="binance",
+        ),
+        side=OrderSide.BUY,
+        order_type=OrderType.MARKET,
+        quantity=Decimal("0.50"),
+        time_in_force=TimeInForce.IOC,
+        limit_price=None,
+    )
+    guard_outcome = GuardOutcome.create(
+        order_intent_id=market_order.order_intent_id,
+        verdict=GuardVerdict.PASSED,
+        metadata={"checked_constraint": "market_order_allowed"},
+    )
+    admitted_order = AdmittedOrder.create(
+        order_intent=market_order,
+        guard_outcome=guard_outcome,
+    )
+    accepted_report = next(
+        report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.ACCEPTED
+    )
+
+    fill = adapter.materialize_fill(
+        admitted_order,
+        accepted_report,
+        execution_price=Decimal("104.75"),
+    )
+
+    assert fill.price == Decimal("104.75")
+    assert fill.external_fill_id == accepted_report.external_order_id
+    assert fill.metadata["execution_price_source"] == "explicit_execution_price"
+
+
+def test_mock_execution_adapter_materialize_fill_rejects_invalid_report_kind() -> None:
+    adapter = MockExecutionAdapter(accept_orders=True)
+    admitted_order = build_admitted_order()
+    submitted_report = next(
+        report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.SUBMITTED
+    )
+
+    try:
+        adapter.materialize_fill(admitted_order, submitted_report)
+    except ValueError as exc:
+        assert str(exc) == "Fill materialization requires an accepted or acknowledged report"
+    else:
+        raise AssertionError("Expected invalid report kind to be rejected")
+
+
+def test_mock_execution_adapter_materialize_fill_rejects_mismatched_report() -> None:
+    adapter = MockExecutionAdapter(accept_orders=True)
+    admitted_order = build_admitted_order()
+    mismatched_report = ExecutionReport.create(
+        kind=ExecutionReportKind.ACCEPTED,
+        order_intent_id="ordint_other",
+        external_order_id="mock_ordint_other",
+    )
+
+    try:
+        adapter.materialize_fill(admitted_order, mismatched_report)
+    except ValueError as exc:
+        assert str(exc) == "ExecutionReport does not match AdmittedOrder"
+    else:
+        raise AssertionError("Expected mismatched report to be rejected")
