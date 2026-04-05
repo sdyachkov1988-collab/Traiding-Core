@@ -60,6 +60,16 @@ class ConfidenceCapRiskEvaluator:
                 metadata={"instrument_id": instrument_basis.instrument_id},
             )
 
+        if portfolio_basis.reference_price <= Decimal("0"):
+            return RiskDecision.create(
+                verdict=RiskVerdict.REJECTED,
+                strategy_intent_id=intent.intent_id,
+                instrument=intent.instrument,
+                side=intent.side,
+                rejection_reason="reference_price_not_positive",
+                metadata={"instrument_id": instrument_basis.instrument_id},
+            )
+
         allowed_capital = min(
             portfolio_basis.available_capital,
             portfolio_basis.max_capital_per_trade,
@@ -95,28 +105,14 @@ class ConfidenceCapRiskEvaluator:
                 metadata={"instrument_id": instrument_basis.instrument_id},
             )
 
-        approved_quantity = min(raw_quantity, instrument_basis.max_order_quantity)
-        if approved_quantity < raw_quantity:
+        if raw_quantity > instrument_basis.max_order_quantity:
             return RiskDecision.create(
                 verdict=RiskVerdict.CAPPED,
                 strategy_intent_id=intent.intent_id,
                 instrument=intent.instrument,
                 side=intent.side,
-                approved_quantity=approved_quantity,
+                approved_quantity=instrument_basis.max_order_quantity,
                 rejection_reason="clamped_to_max_order_quantity",
-                metadata={"instrument_id": instrument_basis.instrument_id},
-            )
-
-        if intent.side is OrderSide.SELL and approved_quantity < (
-            (scaled_capital / portfolio_basis.reference_price) // instrument_basis.quantity_step
-        ) * instrument_basis.quantity_step:
-            return RiskDecision.create(
-                verdict=RiskVerdict.CAPPED,
-                strategy_intent_id=intent.intent_id,
-                instrument=intent.instrument,
-                side=intent.side,
-                approved_quantity=approved_quantity,
-                rejection_reason="clamped_to_current_position_quantity",
                 metadata={"instrument_id": instrument_basis.instrument_id},
             )
 
@@ -125,6 +121,6 @@ class ConfidenceCapRiskEvaluator:
             strategy_intent_id=intent.intent_id,
             instrument=intent.instrument,
             side=intent.side,
-            approved_quantity=approved_quantity,
+            approved_quantity=raw_quantity,
             metadata={"instrument_id": instrument_basis.instrument_id},
         )
