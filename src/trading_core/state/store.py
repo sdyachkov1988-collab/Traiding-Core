@@ -9,7 +9,7 @@ from pathlib import Path
 
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.portfolio_state import PortfolioState, Position
-from trading_core.domain.state import PersistedStateSnapshot
+from trading_core.domain.state import FillDedupCheckpoint, PersistedStateSnapshot
 
 
 class JsonFileStateStore:
@@ -35,12 +35,14 @@ class JsonFileStateStore:
         self,
         portfolio_state: PortfolioState,
         processed_fill_id: str,
+        dedup_checkpoint: FillDedupCheckpoint | None = None,
     ) -> PersistedStateSnapshot:
         """Persist the portfolio snapshot and processed fill marker atomically."""
 
         snapshot = PersistedStateSnapshot.create(
             portfolio_state=portfolio_state,
             last_processed_fill_id=processed_fill_id,
+            fill_dedup_checkpoint=dedup_checkpoint,
             metadata={
                 "storage_format": "json",
                 "accounting_policy": "assembly_level_fee_in_cost_basis",
@@ -87,6 +89,20 @@ class JsonFileStateStore:
             "snapshot_id": snapshot.snapshot_id,
             "saved_at": snapshot.saved_at.isoformat(),
             "last_processed_fill_id": snapshot.last_processed_fill_id,
+            "fill_dedup_checkpoint": (
+                None
+                if snapshot.fill_dedup_checkpoint is None
+                else {
+                    "seen_fill_ids": list(snapshot.fill_dedup_checkpoint.seen_fill_ids),
+                    "seen_external_fill_ids": list(
+                        snapshot.fill_dedup_checkpoint.seen_external_fill_ids
+                    ),
+                    "seen_fallback_keys": [
+                        list(key)
+                        for key in snapshot.fill_dedup_checkpoint.seen_fallback_keys
+                    ],
+                }
+            ),
             "metadata": dict(snapshot.metadata),
             "portfolio_state": {
                 "portfolio_state_id": snapshot.portfolio_state.portfolio_state_id,
@@ -136,6 +152,7 @@ class JsonFileStateStore:
             updated_at=self._parse_utc_datetime(str(raw_portfolio["updated_at"]), "portfolio_state.updated_at"),
             metadata=dict(raw_portfolio["metadata"]),
         )
+        raw_checkpoint = payload.get("fill_dedup_checkpoint")
         return PersistedStateSnapshot(
             snapshot_id=str(payload["snapshot_id"]),
             portfolio_state=portfolio_state,
@@ -145,7 +162,41 @@ class JsonFileStateStore:
                 if payload.get("last_processed_fill_id") is None
                 else str(payload["last_processed_fill_id"])
             ),
+            fill_dedup_checkpoint=self._deserialize_fill_dedup_checkpoint(raw_checkpoint),
             metadata=dict(payload["metadata"]),
+        )
+
+    def _deserialize_fill_dedup_checkpoint(
+        self,
+        raw_checkpoint: object,
+    ) -> FillDedupCheckpoint | None:
+        if raw_checkpoint is None:
+            return None
+        if not isinstance(raw_checkpoint, dict):
+            raise TypeError(
+                f"expected dict, got {type(raw_checkpoint).__name__}"
+            )
+
+        raw_fill_ids = raw_checkpoint.get("seen_fill_ids", [])
+        raw_external_ids = raw_checkpoint.get("seen_external_fill_ids", [])
+        raw_fallback_keys = raw_checkpoint.get("seen_fallback_keys", [])
+        if not isinstance(raw_fill_ids, list):
+            raise TypeError(f"expected list, got {type(raw_fill_ids).__name__}")
+        if not isinstance(raw_external_ids, list):
+            raise TypeError(f"expected list, got {type(raw_external_ids).__name__}")
+        if not isinstance(raw_fallback_keys, list):
+            raise TypeError(f"expected list, got {type(raw_fallback_keys).__name__}")
+
+        fallback_keys: list[tuple[str, str, str, str, str, str]] = []
+        for raw_key in raw_fallback_keys:
+            if not isinstance(raw_key, (list, tuple)) or len(raw_key) != 6:
+                raise TypeError("fill_dedup_checkpoint.seen_fallback_keys entries must have 6 fields")
+            fallback_keys.append(tuple(str(part) for part in raw_key))
+
+        return FillDedupCheckpoint(
+            seen_fill_ids=tuple(str(fill_id) for fill_id in raw_fill_ids),
+            seen_external_fill_ids=tuple(str(external_id) for external_id in raw_external_ids),
+            seen_fallback_keys=tuple(fallback_keys),
         )
 
     def _parse_utc_datetime(self, raw_value: str, field_name: str) -> datetime:

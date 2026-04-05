@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from trading_core.domain.portfolio_state import PortfolioState
-from trading_core.domain.state import PersistedStateSnapshot
+from trading_core.domain.state import FillDedupCheckpoint, PersistedStateSnapshot
 
 
 class StateStore(Protocol):
@@ -18,6 +18,7 @@ class StateStore(Protocol):
         self,
         portfolio_state: PortfolioState,
         processed_fill_id: str,
+        dedup_checkpoint: FillDedupCheckpoint | None = None,
     ) -> PersistedStateSnapshot:
         """Persist the current local state snapshot and processed fill marker."""
 

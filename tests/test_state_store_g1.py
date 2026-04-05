@@ -5,11 +5,14 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from trading_core.domain import PortfolioState
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.fills import Fill
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.portfolio_state import Position
+from trading_core.domain.state import FillDedupCheckpoint
 from trading_core.execution import IdempotentFillProcessor
 from trading_core.state import JsonFileStateStore
 
@@ -88,6 +91,29 @@ def test_json_file_state_store_save_with_fill_marker_persists_fill_id(tmp_path: 
 
     assert snapshot.last_processed_fill_id == "fill_abc123"
     assert raw["last_processed_fill_id"] == "fill_abc123"
+    assert raw["fill_dedup_checkpoint"] is None
+
+
+def test_json_file_state_store_round_trips_explicit_fill_dedup_checkpoint(tmp_path: Path) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    store = JsonFileStateStore(target_path)
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    checkpoint = FillDedupCheckpoint(
+        seen_fill_ids=("fill_1", "fill_2"),
+        seen_external_fill_ids=("ext_1",),
+        seen_fallback_keys=(("ord_1", "btc-usdt", "buy", "0.1", "100", "0"),),
+    )
+
+    snapshot = store.save_with_fill_marker(
+        portfolio,
+        "fill_2",
+        dedup_checkpoint=checkpoint,
+    )
+    loaded = store.load_latest()
+
+    assert snapshot.fill_dedup_checkpoint == checkpoint
+    assert loaded is not None
+    assert loaded.fill_dedup_checkpoint == checkpoint
 
 
 def test_json_file_state_store_load_latest_remains_compatible_with_old_format(
@@ -102,6 +128,7 @@ def test_json_file_state_store_load_latest_remains_compatible_with_old_format(
 
     assert loaded is not None
     assert loaded.last_processed_fill_id is None
+    assert loaded.fill_dedup_checkpoint is None
 
 
 def test_json_file_state_store_save_with_fill_marker_does_not_leave_tmp_file(
@@ -149,6 +176,137 @@ def test_state_store_last_processed_fill_id_can_be_restored_into_fill_processor(
         assert str(exc) == "Duplicate fill_id received by FillProcessor"
     else:
         raise AssertionError("Expected duplicate fill_id to be rejected after restart restore")
+
+
+def test_state_store_restart_restore_rejects_duplicate_external_fill_id(tmp_path: Path) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    store = JsonFileStateStore(target_path)
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    fill_processor = IdempotentFillProcessor()
+    first = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=InstrumentRef(
+            instrument_id="btc-usdt",
+            symbol="BTCUSDT",
+            venue="binance",
+        ),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+        external_fill_id="ext_123",
+    )
+    fill_processor.accept(first)
+    store.save_with_fill_marker(
+        portfolio,
+        first.fill_id,
+        dedup_checkpoint=fill_processor.checkpoint(),
+    )
+    snapshot = JsonFileStateStore(target_path).load_latest()
+    assert snapshot is not None
+
+    restarted_processor = IdempotentFillProcessor()
+    restarted_processor.restore_checkpoint(snapshot.fill_dedup_checkpoint)
+
+    duplicate_external = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=first.instrument,
+        side=first.side,
+        quantity=first.quantity,
+        price=first.price,
+        fee=first.fee,
+        external_fill_id="ext_123",
+    )
+
+    with pytest.raises(ValueError, match="Duplicate external_fill_id"):
+        restarted_processor.accept(duplicate_external)
+
+
+def test_state_store_restart_restore_rejects_duplicate_fallback_identity(tmp_path: Path) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    store = JsonFileStateStore(target_path)
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    fill_processor = IdempotentFillProcessor()
+    first = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=InstrumentRef(
+            instrument_id="btc-usdt",
+            symbol="BTCUSDT",
+            venue="binance",
+        ),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+    )
+    fill_processor.accept(first)
+    store.save_with_fill_marker(
+        portfolio,
+        first.fill_id,
+        dedup_checkpoint=fill_processor.checkpoint(),
+    )
+    snapshot = JsonFileStateStore(target_path).load_latest()
+    assert snapshot is not None
+
+    restarted_processor = IdempotentFillProcessor()
+    restarted_processor.restore_checkpoint(snapshot.fill_dedup_checkpoint)
+
+    duplicate_fallback = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=first.instrument,
+        side=first.side,
+        quantity=first.quantity,
+        price=first.price,
+        fee=first.fee,
+    )
+
+    with pytest.raises(ValueError, match="Duplicate fallback fill identity"):
+        restarted_processor.accept(duplicate_fallback)
+
+
+def test_state_store_restart_restore_accepts_distinct_fill_after_checkpoint_restore(
+    tmp_path: Path,
+) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    store = JsonFileStateStore(target_path)
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    fill_processor = IdempotentFillProcessor()
+    first = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=InstrumentRef(
+            instrument_id="btc-usdt",
+            symbol="BTCUSDT",
+            venue="binance",
+        ),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+        external_fill_id="ext_123",
+    )
+    fill_processor.accept(first)
+    store.save_with_fill_marker(
+        portfolio,
+        first.fill_id,
+        dedup_checkpoint=fill_processor.checkpoint(),
+    )
+    snapshot = JsonFileStateStore(target_path).load_latest()
+    assert snapshot is not None
+
+    restarted_processor = IdempotentFillProcessor()
+    restarted_processor.restore_checkpoint(snapshot.fill_dedup_checkpoint)
+
+    distinct_fill = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=first.instrument,
+        side=first.side,
+        quantity=Decimal("0.10"),
+        price=Decimal("101"),
+        fee=Decimal("0"),
+        external_fill_id="ext_456",
+    )
+
+    assert restarted_processor.accept(distinct_fill) is distinct_fill
 
 
 def test_json_file_state_store_rejects_naive_datetime_during_deserialization(

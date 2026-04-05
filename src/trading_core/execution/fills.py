@@ -5,16 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from trading_core.domain.fills import Fill
+from trading_core.domain.state import FillDedupCheckpoint
 
 
 @dataclass(slots=True)
 class IdempotentFillProcessor:
     """Accept fill facts once and expose them to the downstream spine."""
 
-    # Known limitation for Minimal Core v1: duplicate tracking is in-memory only.
-    # Persisting the full identity set across restart belongs to a later
-    # hardening phase. The current restart bridge restores only the latest
-    # processed internal fill id from persisted state.
     _seen_external_ids: set[str] = field(default_factory=set)
     _seen_fill_ids: set[str] = field(default_factory=set)
     _seen_fallback_keys: set[tuple[str, str, str, str, str, str]] = field(default_factory=set)
@@ -25,6 +22,24 @@ class IdempotentFillProcessor:
         if fill_id is None:
             return
         self._seen_fill_ids.add(fill_id)
+
+    def checkpoint(self) -> FillDedupCheckpoint:
+        """Return an explicit dedup checkpoint suitable for persistence."""
+
+        return FillDedupCheckpoint(
+            seen_fill_ids=tuple(sorted(self._seen_fill_ids)),
+            seen_external_fill_ids=tuple(sorted(self._seen_external_ids)),
+            seen_fallback_keys=tuple(sorted(self._seen_fallback_keys)),
+        )
+
+    def restore_checkpoint(self, checkpoint: FillDedupCheckpoint | None) -> None:
+        """Restore dedup state from a persisted checkpoint."""
+
+        if checkpoint is None:
+            return
+        self._seen_fill_ids.update(checkpoint.seen_fill_ids)
+        self._seen_external_ids.update(checkpoint.seen_external_fill_ids)
+        self._seen_fallback_keys.update(checkpoint.seen_fallback_keys)
 
     def accept(self, fill: Fill) -> Fill:
         """Return the fill fact once, rejecting duplicate fill identities."""
