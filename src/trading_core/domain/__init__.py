@@ -16,6 +16,12 @@ from trading_core.domain.reconciliation import (
     StartupReconciliationResult,
     StartupReconciliationVerdict,
 )
+from trading_core.domain.reconciliation_extended import (
+    ReconciliationMode,
+    ReconciliationOutcome,
+    ReconciliationRequest,
+    ReconciliationTrigger,
+)
 from trading_core.domain.risk import (
     InstrumentRiskBasis,
     PortfolioRiskBasis,
@@ -60,6 +66,10 @@ __all__ = [
     "PortfolioRiskBasis",
     "PersistedStateSnapshot",
     "Position",
+    "ReconciliationMode",
+    "ReconciliationOutcome",
+    "ReconciliationRequest",
+    "ReconciliationTrigger",
     "RiskDecision",
     "RiskVerdict",
     "StartupReconciliationResult",
