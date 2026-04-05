@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from trading_core.context.policies import parent_period_start, timeframe_to_seconds
 from trading_core.context.store import InstrumentTimeframeStore
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.context import MarketContext, Wave1MtfContext
@@ -60,11 +61,15 @@ class Wave1MtfContextAssembler:
             bar is not None and bar.is_closed is True
             for bar in (entry_bar, trend_bar)
         )
-        no_lookahead_safe = (
-            entry_bar is not None
-            and trend_bar is not None
-            and trend_bar.bar_time <= entry_bar.bar_time
-        )
+        no_lookahead_safe = False
+        if entry_bar is not None and trend_bar is not None:
+            entry_seconds = timeframe_to_seconds(self.entry_timeframe)
+            trend_seconds = timeframe_to_seconds(self.trend_timeframe)
+            if trend_seconds >= entry_seconds and trend_seconds % entry_seconds == 0:
+                no_lookahead_safe = (
+                    trend_bar.bar_time
+                    == parent_period_start(entry_bar.bar_time, self.trend_timeframe)
+                )
         return Wave1MtfContext.create(
             instrument_id=self.instrument.instrument_id,
             entry_timeframe=self.entry_timeframe,

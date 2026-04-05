@@ -3,10 +3,49 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Mapping
 
 from trading_core.domain.timeframe import ClosedBar
+
+
+def timeframe_to_seconds(timeframe: str) -> int:
+    """Convert compact timeframe strings like 15m, 1h, 1d, 1w into seconds."""
+
+    value = int(timeframe[:-1])
+    unit = timeframe[-1]
+    if unit == "m":
+        return value * 60
+    if unit == "h":
+        return value * 3600
+    if unit == "d":
+        return value * 86400
+    if unit == "w":
+        return value * 604800
+    raise ValueError(f"unsupported timeframe format: {timeframe}")
+
+
+def timeframe_duration(timeframe: str) -> timedelta:
+    """Return the duration represented by a compact timeframe string."""
+
+    return timedelta(seconds=timeframe_to_seconds(timeframe))
+
+
+def parent_period_start(entry_bar_time: datetime, parent_timeframe: str) -> datetime:
+    """Return the expected parent-period start for an entry bar time in UTC."""
+
+    seconds = timeframe_to_seconds(parent_timeframe)
+    if parent_timeframe.endswith("w"):
+        start_of_day = entry_bar_time.astimezone(timezone.utc).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        return start_of_day - timedelta(days=start_of_day.weekday())
+
+    timestamp = int(entry_bar_time.timestamp())
+    return datetime.fromtimestamp((timestamp // seconds) * seconds, tz=timezone.utc)
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,31 +63,21 @@ class BarAlignmentPolicy:
             return False
 
         entry_bar = bars[self.entry_timeframe]
-        entry_seconds = self._timeframe_to_seconds(self.entry_timeframe)
-        entry_timestamp = int(entry_bar.bar_time.timestamp())
+        entry_seconds = timeframe_to_seconds(self.entry_timeframe)
         for timeframe in self.required_timeframes:
             if timeframe == self.entry_timeframe:
                 continue
 
             higher_bar = bars[timeframe]
-            higher_seconds = self._timeframe_to_seconds(timeframe)
+            higher_seconds = timeframe_to_seconds(timeframe)
             if higher_seconds < entry_seconds or higher_seconds % entry_seconds != 0:
                 return False
 
-            parent_period_start = (entry_timestamp // higher_seconds) * higher_seconds
-            if int(higher_bar.bar_time.timestamp()) != parent_period_start:
+            expected_parent_start = parent_period_start(entry_bar.bar_time, timeframe)
+            if higher_bar.bar_time != expected_parent_start:
                 return False
 
         return True
-
-    def _timeframe_to_seconds(self, timeframe: str) -> int:
-        """Convert a compact timeframe string like 15m or 1h into seconds."""
-
-        if timeframe.endswith("m"):
-            return int(timeframe[:-1]) * 60
-        if timeframe.endswith("h"):
-            return int(timeframe[:-1]) * 3600
-        raise ValueError(f"unsupported timeframe format: {timeframe}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,4 +99,5 @@ class FreshnessPolicy:
     def is_fresh(self, bar: ClosedBar, now: datetime) -> bool:
         """Return True when the bar age stays within the configured limit."""
 
-        return (now - bar.bar_time).total_seconds() <= self.max_age_seconds
+        bar_close_time = bar.bar_time + timeframe_duration(bar.timeframe)
+        return (now - bar_close_time).total_seconds() <= self.max_age_seconds

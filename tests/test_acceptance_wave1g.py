@@ -58,7 +58,9 @@ def build_wave1g_pipeline():
         venue="binance",
     )
     store = InstrumentTimeframeStore("btc-usdt")
-    now = utc_now()
+    now = utc_now().replace(second=0, microsecond=0)
+    entry_bar_time = now.replace(minute=(now.minute // 15) * 15)
+    trend_bar_time = entry_bar_time.replace(minute=0)
     entry_bar = TimeframeSyncEvent.create(
         instrument_id="btc-usdt",
         timeframe="15m",
@@ -69,7 +71,7 @@ def build_wave1g_pipeline():
             low=Decimal("99"),
             close=Decimal("105"),
             volume=Decimal("10"),
-            bar_time=now - timedelta(seconds=60),
+            bar_time=entry_bar_time,
             is_closed=True,
         ),
         received_at=now,
@@ -84,7 +86,7 @@ def build_wave1g_pipeline():
             low=Decimal("94"),
             close=Decimal("104"),
             volume=Decimal("40"),
-            bar_time=now - timedelta(seconds=120),
+            bar_time=trend_bar_time,
             is_closed=True,
         ),
         received_at=now,

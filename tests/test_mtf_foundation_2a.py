@@ -13,7 +13,8 @@ from trading_core.context import (
     TimeframeContextAssembler,
 )
 from trading_core.domain import ClosedBar, TimeframeContext, TimeframeSyncEvent
-from trading_core.domain.common import utc_now
+from trading_core.domain.common import InstrumentRef, utc_now
+from trading_core.input import Wave1MtfContextAssembler
 
 
 def make_closed_bar(
@@ -126,7 +127,7 @@ def test_bar_alignment_policy_is_false_when_parent_period_is_misaligned() -> Non
 
 def test_freshness_policy_returns_false_for_stale_bar() -> None:
     policy = FreshnessPolicy(max_age_seconds=60)
-    stale_bar = make_closed_bar(timeframe="15m", age_seconds=120)
+    stale_bar = make_closed_bar(timeframe="15m", bar_time=utc_now() - timedelta(minutes=16))
 
     assert policy.is_fresh(stale_bar, utc_now()) is False
 
@@ -136,6 +137,65 @@ def test_freshness_policy_returns_true_for_fresh_bar() -> None:
     fresh_bar = make_closed_bar(timeframe="15m", bar_time=utc_now() - timedelta(seconds=10))
 
     assert policy.is_fresh(fresh_bar, utc_now()) is True
+
+
+def test_freshness_policy_counts_1h_bar_age_from_close_time() -> None:
+    policy = FreshnessPolicy(max_age_seconds=120)
+    now = utc_now().replace(minute=0, second=30, microsecond=0)
+    just_closed_hour_bar = make_closed_bar(
+        timeframe="1h",
+        bar_time=now.replace(hour=now.hour - 1, minute=0, second=0),
+    )
+
+    assert policy.is_fresh(just_closed_hour_bar, now) is True
+
+
+def test_freshness_policy_counts_1d_bar_age_from_close_time() -> None:
+    policy = FreshnessPolicy(max_age_seconds=120)
+    now = utc_now().replace(hour=0, minute=1, second=0, microsecond=0)
+    just_closed_daily_bar = make_closed_bar(
+        timeframe="1d",
+        bar_time=now - timedelta(days=1, minutes=1),
+    )
+
+    assert policy.is_fresh(just_closed_daily_bar, now) is True
+
+
+def test_freshness_policy_counts_1w_bar_age_from_close_time() -> None:
+    policy = FreshnessPolicy(max_age_seconds=180)
+    now = utc_now().replace(hour=0, minute=2, second=0, microsecond=0)
+    just_closed_weekly_bar = make_closed_bar(
+        timeframe="1w",
+        bar_time=now - timedelta(days=7, minutes=2),
+    )
+
+    assert policy.is_fresh(just_closed_weekly_bar, now) is True
+
+
+def test_bar_alignment_policy_supports_daily_and_weekly_timeframes() -> None:
+    policy = BarAlignmentPolicy(entry_timeframe="1d", required_timeframes=("1d", "1w"))
+    now = utc_now()
+    monday_open = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+        days=now.weekday()
+    )
+    bars = {
+        "1d": make_closed_bar(timeframe="1d", bar_time=monday_open),
+        "1w": make_closed_bar(timeframe="1w", bar_time=monday_open),
+    }
+
+    assert policy.is_aligned(bars) is True
+
+
+def test_bar_alignment_policy_raises_for_unsupported_timeframe() -> None:
+    policy = BarAlignmentPolicy(entry_timeframe="15m", required_timeframes=("15m", "1M"))
+    now = utc_now().replace(minute=15, second=0, microsecond=0)
+    bars = {
+        "15m": make_closed_bar(timeframe="15m", bar_time=now),
+        "1M": make_closed_bar(timeframe="1M", bar_time=now.replace(minute=0)),
+    }
+
+    with pytest.raises(ValueError, match="unsupported timeframe format: 1M"):
+        policy.is_aligned(bars)
 
 
 def test_timeframe_context_assembler_returns_none_when_alignment_not_met() -> None:
@@ -301,3 +361,69 @@ def test_timeframe_context_assembler_carries_history_depth_from_store() -> None:
 
     assert context is not None
     assert context.history_depths["15m"] == 2
+
+
+def test_wave1_mtf_context_marks_correct_parent_bar_as_no_lookahead_safe() -> None:
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    store = InstrumentTimeframeStore("btc-usdt")
+    entry_bar_time = utc_now().replace(minute=15, second=0, microsecond=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=entry_bar_time),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=make_closed_bar(timeframe="1h", bar_time=entry_bar_time.replace(minute=0)),
+        )
+    )
+
+    context = Wave1MtfContextAssembler(
+        instrument=instrument,
+        store=store,
+        entry_timeframe="15m",
+        trend_timeframe="1h",
+    ).assemble()
+
+    assert context.no_lookahead_safe is True
+
+
+def test_wave1_mtf_context_rejects_older_but_wrong_parent_bar_for_no_lookahead() -> None:
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    store = InstrumentTimeframeStore("btc-usdt")
+    entry_bar_time = utc_now().replace(minute=0, second=0, microsecond=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=entry_bar_time),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=make_closed_bar(timeframe="1h", bar_time=entry_bar_time - timedelta(hours=1)),
+        )
+    )
+
+    context = Wave1MtfContextAssembler(
+        instrument=instrument,
+        store=store,
+        entry_timeframe="15m",
+        trend_timeframe="1h",
+    ).assemble()
+
+    assert context.no_lookahead_safe is False
