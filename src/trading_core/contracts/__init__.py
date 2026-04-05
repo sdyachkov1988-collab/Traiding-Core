@@ -1,5 +1,6 @@
 """Interface contracts for Minimal Core v1 seams."""
 
+from trading_core.contracts.close_router import CloseIntentRouterProtocol
 from trading_core.contracts.coordinator import RecoveryCoordinatorProtocol
 from trading_core.contracts.context import TimeframeContextProvider
 from trading_core.contracts.execution import ExecutionAdapter
@@ -16,6 +17,7 @@ from trading_core.contracts.state import StateStore
 
 __all__ = [
     "ContextGateProtocol",
+    "CloseIntentRouterProtocol",
     "RecoveryCoordinatorProtocol",
     "ExecutionAdapter",
     "EventNormalizer",

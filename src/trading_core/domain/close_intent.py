@@ -1,0 +1,85 @@
+"""Position-originated close-routing domain objects for Wave 2E."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+from enum import StrEnum
+
+from trading_core.domain.common import InstrumentRef, new_internal_id, utc_now
+
+
+class CloseRoutingVerdict(StrEnum):
+    """Formal outcomes for the position-originated close-routing contour."""
+
+    ADMITTED = "admitted"
+    REJECTED = "rejected"
+    SAFE_MODE_TRIGGERED = "safe_mode_triggered"
+
+
+@dataclass(frozen=True, slots=True)
+class CloseIntent:
+    """Formal close intent emitted by the position-management layer."""
+
+    intent_id: str
+    instrument: InstrumentRef
+    position_id: str
+    quantity: Decimal
+    reason: str
+    created_at: datetime
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        instrument: InstrumentRef,
+        position_id: str,
+        quantity: Decimal,
+        reason: str,
+    ) -> "CloseIntent":
+        """Create a position-originated close intent."""
+
+        return cls(
+            intent_id=new_internal_id("close"),
+            instrument=instrument,
+            position_id=position_id,
+            quantity=quantity,
+            reason=reason,
+            created_at=utc_now(),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CloseRoutingResult:
+    """Explicit outcome for a close intent routed through the core seams."""
+
+    result_id: str
+    close_intent_id: str
+    verdict: CloseRoutingVerdict
+    order_intent_id: str | None
+    admitted_order_id: str | None
+    reason: str | None
+    created_at: datetime
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        close_intent_id: str,
+        verdict: CloseRoutingVerdict,
+        order_intent_id: str | None = None,
+        admitted_order_id: str | None = None,
+        reason: str | None = None,
+    ) -> "CloseRoutingResult":
+        """Create an explicit close-routing result with preserved lineage."""
+
+        return cls(
+            result_id=new_internal_id("close_route"),
+            close_intent_id=close_intent_id,
+            verdict=verdict,
+            order_intent_id=order_intent_id,
+            admitted_order_id=admitted_order_id,
+            reason=reason,
+            created_at=utc_now(),
+        )
