@@ -41,6 +41,49 @@ def test_fill_driven_spine_builds_position_and_portfolio_from_buys() -> None:
     assert portfolio.positions["btc-usdt"].quantity == Decimal("0.10")
 
 
+def test_portfolio_engine_rejects_buy_fill_that_would_make_cash_negative() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+    portfolio_engine = SpotPortfolioEngine()
+    portfolio = PortfolioState.empty(cash_balance=Decimal("100"))
+
+    buy_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("2.00"),
+        price=Decimal("60"),
+        fee=Decimal("1"),
+    )
+    position = position_engine.apply(None, fill_processor.accept(buy_fill))
+
+    with pytest.raises(ValueError, match="buy_fill_exceeds_available_cash_balance"):
+        portfolio_engine.apply(portfolio, buy_fill, position)
+
+
+def test_rejected_buy_fill_leaves_existing_portfolio_truth_unchanged() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+    portfolio_engine = SpotPortfolioEngine()
+    original_portfolio = PortfolioState.empty(cash_balance=Decimal("100"))
+
+    buy_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("2.00"),
+        price=Decimal("60"),
+        fee=Decimal("1"),
+    )
+    position = position_engine.apply(None, fill_processor.accept(buy_fill))
+
+    with pytest.raises(ValueError, match="buy_fill_exceeds_available_cash_balance"):
+        portfolio_engine.apply(original_portfolio, buy_fill, position)
+
+    assert original_portfolio.cash_balance == Decimal("100")
+    assert original_portfolio.positions == {}
+
+
 def test_fill_driven_spine_realizes_pnl_only_from_sell_fill() -> None:
     fill_processor = IdempotentFillProcessor()
     position_engine = SpotPositionEngine()

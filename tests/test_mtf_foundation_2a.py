@@ -144,7 +144,7 @@ def test_freshness_policy_counts_1h_bar_age_from_close_time() -> None:
     now = utc_now().replace(minute=0, second=30, microsecond=0)
     just_closed_hour_bar = make_closed_bar(
         timeframe="1h",
-        bar_time=now.replace(hour=now.hour - 1, minute=0, second=0),
+        bar_time=now.replace(minute=0, second=0) - timedelta(hours=1),
     )
 
     assert policy.is_fresh(just_closed_hour_bar, now) is True

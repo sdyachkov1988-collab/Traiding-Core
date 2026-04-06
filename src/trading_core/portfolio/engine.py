@@ -22,6 +22,8 @@ class SpotPortfolioEngine:
 
         if fill.side is OrderSide.BUY:
             next_cash_balance = current.cash_balance - fill.gross_notional - fill.fee
+            if next_cash_balance < Decimal("0"):
+                raise ValueError("buy_fill_exceeds_available_cash_balance")
         else:
             prev_quantity = prev_position.quantity if prev_position is not None else Decimal("0")
             if fill.quantity > prev_quantity:
