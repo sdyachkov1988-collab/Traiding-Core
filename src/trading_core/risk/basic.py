@@ -93,7 +93,21 @@ class ConfidenceCapRiskEvaluator:
                     rejection_reason="no_position_to_sell",
                     metadata={"instrument_id": instrument_basis.instrument_id},
                 )
-            raw_quantity = min(raw_quantity, portfolio_basis.current_position_quantity)
+            if raw_quantity > portfolio_basis.current_position_quantity:
+                return RiskDecision.create(
+                    verdict=RiskVerdict.REJECTED,
+                    strategy_intent_id=intent.intent_id,
+                    instrument=intent.instrument,
+                    side=intent.side,
+                    rejection_reason="sell_quantity_exceeds_position",
+                    metadata={
+                        "instrument_id": instrument_basis.instrument_id,
+                        "requested_quantity": str(raw_quantity),
+                        "current_position_quantity": str(
+                            portfolio_basis.current_position_quantity
+                        ),
+                    },
+                )
 
         if raw_quantity < instrument_basis.min_order_quantity:
             return RiskDecision.create(

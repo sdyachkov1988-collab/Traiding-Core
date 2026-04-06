@@ -19,6 +19,7 @@ class ExecutionReportKind(StrEnum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     ACKNOWLEDGED = "acknowledged"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True, slots=True)

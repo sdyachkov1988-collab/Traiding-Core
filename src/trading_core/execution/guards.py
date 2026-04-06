@@ -33,6 +33,8 @@ class SimplePreExecutionGuard:
         if intent.order_type is OrderType.LIMIT:
             if intent.limit_price is None:
                 return self._reject(intent, "missing_limit_price")
+            if intent.limit_price <= Decimal("0"):
+                return self._reject(intent, "limit_price_not_positive")
             if not self._is_step_aligned(intent.limit_price, basis.price_step):
                 return self._reject(intent, "price_rounding_invalid")
             reference_price = intent.limit_price

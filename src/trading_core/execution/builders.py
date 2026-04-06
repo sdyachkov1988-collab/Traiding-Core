@@ -127,4 +127,10 @@ class SimpleOrderIntentBuilder:
         """
 
         signed_offset = offset if side is OrderSide.BUY else -offset
-        return (reference_price + signed_offset).quantize(price_step, rounding=ROUND_DOWN)
+        limit_price = (reference_price + signed_offset).quantize(
+            price_step,
+            rounding=ROUND_DOWN,
+        )
+        if limit_price <= Decimal("0"):
+            raise ValueError("Limit price must be positive")
+        return limit_price

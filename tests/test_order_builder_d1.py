@@ -8,6 +8,7 @@ from trading_core.domain import (
     ExecutionConstraintBasis,
     InstrumentExecutionSpec,
     InstrumentRiskBasis,
+    OrderSide,
     OrderType,
     PortfolioRiskBasis,
     RiskVerdict,
@@ -184,5 +185,34 @@ def test_order_builder_rejects_quantity_that_falls_below_min_after_rounding() ->
             execution_basis=ExecutionConstraintBasis(
                 reference_price=Decimal("105.00"),
                 preferred_limit_offset=Decimal("0.20"),
+            ),
+        )
+
+
+def test_order_builder_rejects_non_positive_limit_price() -> None:
+    decision = build_approved_decision()
+    builder = SimpleOrderIntentBuilder()
+    sell_decision = type(decision).create(
+        verdict=RiskVerdict.APPROVED,
+        strategy_intent_id=decision.strategy_intent_id,
+        instrument=decision.instrument,
+        side=OrderSide.SELL,
+        approved_quantity=decision.approved_quantity,
+    )
+
+    with pytest.raises(ValueError, match="Limit price must be positive"):
+        builder.build(
+            decision=sell_decision,
+            instrument_spec=InstrumentExecutionSpec(
+                instrument_id="btc-usdt",
+                quantity_step=Decimal("0.01"),
+                price_step=Decimal("0.10"),
+                min_order_quantity=Decimal("0.01"),
+                supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
+                supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
+            ),
+            execution_basis=ExecutionConstraintBasis(
+                reference_price=Decimal("0.05"),
+                preferred_limit_offset=Decimal("0.10"),
             ),
         )

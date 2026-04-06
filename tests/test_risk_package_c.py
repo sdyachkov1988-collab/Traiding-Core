@@ -249,7 +249,7 @@ def test_confidence_cap_risk_evaluator_rejects_sell_without_position() -> None:
     assert decision.rejection_reason == "no_position_to_sell"
 
 
-def test_confidence_cap_risk_evaluator_approves_sell_clamped_to_existing_position() -> None:
+def test_confidence_cap_risk_evaluator_rejects_sell_that_exceeds_existing_position() -> None:
     intent = build_sell_intent()
     evaluator = ConfidenceCapRiskEvaluator(min_confidence=Decimal("0.01"))
 
@@ -269,9 +269,9 @@ def test_confidence_cap_risk_evaluator_approves_sell_clamped_to_existing_positio
         ),
     )
 
-    assert decision.verdict == RiskVerdict.APPROVED
-    assert decision.approved_quantity == Decimal("0.03")
-    assert decision.rejection_reason is None
+    assert decision.verdict == RiskVerdict.REJECTED
+    assert decision.approved_quantity is None
+    assert decision.rejection_reason == "sell_quantity_exceeds_position"
 
 
 def test_confidence_cap_risk_evaluator_still_caps_sell_at_max_order_quantity() -> None:
@@ -297,6 +297,33 @@ def test_confidence_cap_risk_evaluator_still_caps_sell_at_max_order_quantity() -
     assert decision.verdict == RiskVerdict.CAPPED
     assert decision.approved_quantity == Decimal("0.05")
     assert decision.rejection_reason == "clamped_to_max_order_quantity"
+
+
+def test_confidence_cap_risk_evaluator_approves_sell_when_requested_size_fits_position() -> None:
+    intent = build_sell_intent()
+    evaluator = ConfidenceCapRiskEvaluator(
+        min_confidence=Decimal("0.01"),
+        confidence_to_capital_fraction=Decimal("0.1"),
+    )
+
+    decision = evaluator.evaluate(
+        intent=intent,
+        instrument_basis=InstrumentRiskBasis(
+            instrument_id="btc-usdt",
+            min_order_quantity=Decimal("0.01"),
+            max_order_quantity=Decimal("10"),
+            quantity_step=Decimal("0.01"),
+        ),
+        portfolio_basis=PortfolioRiskBasis(
+            available_capital=Decimal("500.00"),
+            max_capital_per_trade=Decimal("250.00"),
+            reference_price=Decimal("105.00"),
+            current_position_quantity=Decimal("1.00"),
+        ),
+    )
+
+    assert decision.verdict == RiskVerdict.APPROVED
+    assert decision.approved_quantity == Decimal("0.01")
 
 
 def test_confidence_cap_risk_evaluator_approves_sell_with_existing_position() -> None:
@@ -344,7 +371,7 @@ def test_confidence_cap_risk_evaluator_rejects_sell_when_position_after_cap_is_b
     )
 
     assert decision.verdict == RiskVerdict.REJECTED
-    assert decision.rejection_reason == "below_min_order_quantity"
+    assert decision.rejection_reason == "sell_quantity_exceeds_position"
 
 
 def test_confidence_cap_risk_evaluator_rejects_non_positive_reference_price() -> None:

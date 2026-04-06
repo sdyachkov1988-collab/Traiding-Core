@@ -20,6 +20,7 @@ from trading_core.domain import (
     TimeInForce,
 )
 from trading_core.execution import (
+    ExecutionHandoff,
     MockExecutionAdapter,
     SimpleOrderIntentBuilder,
     SimplePreExecutionGuard,
@@ -139,7 +140,8 @@ def test_mock_execution_adapter_materializes_limit_fill_from_order_limit_price()
     fill = adapter.materialize_fill(admitted_order, accepted_report, fee=Decimal("0.25"))
 
     assert fill.price == admitted_order.order_intent.limit_price
-    assert fill.external_fill_id == accepted_report.external_order_id
+    assert fill.external_fill_id != accepted_report.external_order_id
+    assert fill.metadata["external_order_id"] == accepted_report.external_order_id
     assert fill.metadata["execution_price_source"] == "order_limit_price"
     assert fill.metadata["execution_report_id"] == accepted_report.report_id
 
@@ -179,7 +181,8 @@ def test_mock_execution_adapter_materializes_market_fill_from_explicit_execution
     )
 
     assert fill.price == Decimal("104.75")
-    assert fill.external_fill_id == accepted_report.external_order_id
+    assert fill.external_fill_id != accepted_report.external_order_id
+    assert fill.metadata["external_order_id"] == accepted_report.external_order_id
     assert fill.metadata["execution_price_source"] == "explicit_execution_price"
 
 
@@ -213,3 +216,31 @@ def test_mock_execution_adapter_materialize_fill_rejects_mismatched_report() -> 
         assert str(exc) == "ExecutionReport does not match AdmittedOrder"
     else:
         raise AssertionError("Expected mismatched report to be rejected")
+
+
+def test_execution_handoff_exposes_extended_execution_capabilities() -> None:
+    instrument_spec = InstrumentExecutionSpec(
+        instrument_id="btc-usdt",
+        quantity_step=Decimal("0.01"),
+        price_step=Decimal("0.10"),
+        min_order_quantity=Decimal("0.01"),
+        supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
+        supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
+    )
+    adapter = MockExecutionAdapter(
+        accept_orders=True,
+        balances={"USDT": Decimal("1000.00")},
+        instrument_specs={"btc-usdt": instrument_spec},
+    )
+    handoff = ExecutionHandoff(adapter=adapter)
+    admitted_order = build_admitted_order()
+
+    reports = handoff.place(admitted_order)
+    accepted = next(report for report in reports if report.kind is ExecutionReportKind.ACCEPTED)
+    queried_reports = handoff.query(accepted.external_order_id or "")
+    cancelled_reports = handoff.cancel(accepted.external_order_id or "")
+
+    assert handoff.get_balances()["USDT"] == Decimal("1000.00")
+    assert handoff.get_instrument_spec("btc-usdt") == instrument_spec
+    assert queried_reports == reports
+    assert cancelled_reports[-1].kind is ExecutionReportKind.CANCELLED
