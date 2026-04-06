@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from trading_core.domain.context import MarketContext
+from trading_core.domain.context import Wave1MtfContext
 from trading_core.domain.events import MarketEvent
 
 
@@ -18,5 +18,5 @@ class EventNormalizer(Protocol):
 class MarketContextAssembler(Protocol):
     """Build the early strategy-facing context from normalized events."""
 
-    def assemble(self, event: MarketEvent) -> MarketContext:
+    def assemble(self, event: MarketEvent) -> Wave1MtfContext:
         """Return the phase-scoped market context for Package A."""

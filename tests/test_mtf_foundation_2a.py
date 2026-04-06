@@ -14,7 +14,7 @@ from trading_core.context import (
 )
 from trading_core.domain import ClosedBar, TimeframeContext, TimeframeSyncEvent
 from trading_core.domain.common import InstrumentRef, utc_now
-from trading_core.input import Wave1MtfContextAssembler
+from trading_core.input import DictEventNormalizer, Wave1MtfContextAssembler
 
 
 def make_closed_bar(
@@ -45,6 +45,28 @@ def make_closed_bar(
         volume=Decimal("10"),
         bar_time=(bar_time - timedelta(seconds=age_seconds)) if age_seconds else bar_time,
         is_closed=True,
+    )
+
+
+def make_bar_event(*, instrument: InstrumentRef, bar: ClosedBar):
+    normalizer = DictEventNormalizer()
+    return normalizer.normalize(
+        {
+            "instrument_id": instrument.instrument_id,
+            "symbol": instrument.symbol,
+            "venue": instrument.venue,
+            "event_kind": "bar",
+            "source": "test-feed",
+            "payload": {
+                "timeframe": bar.timeframe,
+                "open": str(bar.open),
+                "high": str(bar.high),
+                "low": str(bar.low),
+                "close": str(bar.close),
+                "volume": str(bar.volume),
+            },
+            "source_event_time": bar.bar_time,
+        }
     )
 
 
@@ -371,13 +393,7 @@ def test_wave1_mtf_context_marks_correct_parent_bar_as_no_lookahead_safe() -> No
     )
     store = InstrumentTimeframeStore("btc-usdt")
     entry_bar_time = utc_now().replace(minute=15, second=0, microsecond=0)
-    store.update(
-        TimeframeSyncEvent.create(
-            instrument_id="btc-usdt",
-            timeframe="15m",
-            bar=make_closed_bar(timeframe="15m", bar_time=entry_bar_time),
-        )
-    )
+    entry_bar = make_closed_bar(timeframe="15m", bar_time=entry_bar_time)
     store.update(
         TimeframeSyncEvent.create(
             instrument_id="btc-usdt",
@@ -391,7 +407,7 @@ def test_wave1_mtf_context_marks_correct_parent_bar_as_no_lookahead_safe() -> No
         store=store,
         entry_timeframe="15m",
         trend_timeframe="1h",
-    ).assemble()
+    ).assemble(make_bar_event(instrument=instrument, bar=entry_bar))
 
     assert context.no_lookahead_safe is True
 
@@ -404,13 +420,7 @@ def test_wave1_mtf_context_rejects_older_but_wrong_parent_bar_for_no_lookahead()
     )
     store = InstrumentTimeframeStore("btc-usdt")
     entry_bar_time = utc_now().replace(minute=0, second=0, microsecond=0)
-    store.update(
-        TimeframeSyncEvent.create(
-            instrument_id="btc-usdt",
-            timeframe="15m",
-            bar=make_closed_bar(timeframe="15m", bar_time=entry_bar_time),
-        )
-    )
+    entry_bar = make_closed_bar(timeframe="15m", bar_time=entry_bar_time)
     store.update(
         TimeframeSyncEvent.create(
             instrument_id="btc-usdt",
@@ -424,6 +434,6 @@ def test_wave1_mtf_context_rejects_older_but_wrong_parent_bar_for_no_lookahead()
         store=store,
         entry_timeframe="15m",
         trend_timeframe="1h",
-    ).assemble()
+    ).assemble(make_bar_event(instrument=instrument, bar=entry_bar))
 
     assert context.no_lookahead_safe is False

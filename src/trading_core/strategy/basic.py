@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from trading_core.contracts.strategy import StrategyResult
-from trading_core.domain.common import InstrumentRef
 from trading_core.domain.context import MarketContext, Wave1MtfContext
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.strategy import NoAction, StrategyIntent
@@ -80,7 +79,6 @@ class BarDirectionStrategy:
 class MtfBarAlignmentStrategy:
     """A minimal MTF-first reference strategy consuming TimeframeContext only."""
 
-    instrument: InstrumentRef
     strategy_name: str = "mtf_bar_alignment"
     entry_timeframe: str = "15m"
     trend_timeframe: str = "1h"
@@ -146,7 +144,7 @@ class MtfBarAlignmentStrategy:
         trend_body_ratio = abs(trend_bar.close - trend_bar.open) / trend_bar.open
         confidence = min(Decimal("1.0"), max(entry_body_ratio, trend_body_ratio))
         return StrategyIntent.create(
-            instrument=self.instrument,
+            instrument=context.instrument,
             side=entry_side,
             thesis="mtf_alignment_continuation",
             confidence=confidence,

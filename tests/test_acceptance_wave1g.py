@@ -42,7 +42,7 @@ from trading_core.execution import (
     SimpleOrderIntentBuilder,
     SimplePreExecutionGuard,
 )
-from trading_core.input import Wave1MtfContextAssembler
+from trading_core.input import DictEventNormalizer, Wave1MtfContextAssembler
 from trading_core.portfolio import SpotPortfolioEngine
 from trading_core.positions import SpotPositionEngine
 from trading_core.reconciliation import SimpleStartupReconciler
@@ -99,11 +99,29 @@ def build_wave1g_pipeline():
         entry_timeframe="15m",
         trend_timeframe="1h",
     )
-    strategy = MtfBarAlignmentStrategy(instrument=instrument)
+    strategy = MtfBarAlignmentStrategy()
     risk = ConfidenceCapRiskEvaluator(min_confidence=Decimal("0.01"))
     builder = SimpleOrderIntentBuilder()
     guard = SimplePreExecutionGuard()
-    context = assembler.assemble()
+    event = DictEventNormalizer().normalize(
+        {
+            "instrument_id": instrument.instrument_id,
+            "symbol": instrument.symbol,
+            "venue": instrument.venue,
+            "event_kind": "bar",
+            "source": "test-feed",
+            "payload": {
+                "timeframe": "15m",
+                "open": "100",
+                "high": "106",
+                "low": "99",
+                "close": "105",
+                "volume": "10",
+            },
+            "source_event_time": entry_bar_time,
+        }
+    )
+    context = assembler.assemble(event)
     strategy_intent = strategy.evaluate(context)
     assert isinstance(strategy_intent, StrategyIntent)
     risk_decision = risk.evaluate(
@@ -325,8 +343,27 @@ def test_wave1g_strategy_returns_no_action_when_mandatory_htf_input_missing() ->
         store=store,
         entry_timeframe="15m",
         trend_timeframe="1h",
-    ).assemble()
-    strategy = MtfBarAlignmentStrategy(instrument=instrument)
+    ).assemble(
+        DictEventNormalizer().normalize(
+            {
+                "instrument_id": instrument.instrument_id,
+                "symbol": instrument.symbol,
+                "venue": instrument.venue,
+                "event_kind": "bar",
+                "source": "test-feed",
+                "payload": {
+                    "timeframe": "15m",
+                    "open": "100",
+                    "high": "106",
+                    "low": "99",
+                    "close": "105",
+                    "volume": "10",
+                },
+                "source_event_time": now - timedelta(seconds=60),
+            }
+        )
+    )
+    strategy = MtfBarAlignmentStrategy()
 
     result = strategy.evaluate(context)
 

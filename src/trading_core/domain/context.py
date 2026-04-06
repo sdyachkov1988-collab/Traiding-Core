@@ -60,7 +60,7 @@ class Wave1MtfContext:
     """Phase-scoped Wave 1 MTF input without claiming full TimeframeContext maturity."""
 
     context_id: str
-    instrument_id: str
+    instrument: InstrumentRef
     entry_timeframe: str
     trend_timeframe: str
     entry_bar: ClosedBar | None
@@ -78,7 +78,7 @@ class Wave1MtfContext:
     def create(
         cls,
         *,
-        instrument_id: str,
+        instrument: InstrumentRef,
         entry_timeframe: str,
         trend_timeframe: str,
         entry_bar: ClosedBar | None,
@@ -92,7 +92,7 @@ class Wave1MtfContext:
 
         return cls(
             context_id=new_internal_id("ctx1mtf"),
-            instrument_id=instrument_id,
+            instrument=instrument,
             entry_timeframe=entry_timeframe,
             trend_timeframe=trend_timeframe,
             entry_bar=entry_bar,
@@ -103,3 +103,12 @@ class Wave1MtfContext:
             created_at=utc_now(),
             metadata=dict(metadata or {}),
         )
+
+    @property
+    def instrument_id(self) -> str:
+        """Expose instrument_id without severing the full instrument lineage."""
+
+        return self.instrument.instrument_id
+
+
+StrategyContext = MarketContext | Wave1MtfContext
