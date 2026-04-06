@@ -13,7 +13,7 @@ from trading_core.domain.strategy import NoAction, StrategyIntent
 
 @dataclass(slots=True)
 class BarDirectionStrategy:
-    """A minimal reference strategy based on bar direction."""
+    """A legacy reference strategy based on bar direction."""
 
     strategy_name: str = "bar_direction"
     min_body_ratio: Decimal = Decimal("0.001")
@@ -77,7 +77,7 @@ class BarDirectionStrategy:
 
 @dataclass(slots=True)
 class MtfBarAlignmentStrategy:
-    """A minimal MTF-first reference strategy consuming TimeframeContext only."""
+    """The active Wave 1 strategy operating on the formal MTF contract only."""
 
     strategy_name: str = "mtf_bar_alignment"
     entry_timeframe: str = "15m"
