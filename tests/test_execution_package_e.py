@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from trading_core.contracts.execution import ExecutionAdapter, ExecutionSubmitter
 from trading_core.domain import (
     AdmittedOrder,
     ExecutionAdmissibilityBasis,
@@ -288,3 +289,10 @@ def test_execution_handoff_exposes_extended_execution_capabilities() -> None:
     assert handoff.get_instrument_spec("btc-usdt") == instrument_spec
     assert queried_reports == reports
     assert cancelled_reports[-1].kind is ExecutionReportKind.CANCELLED
+
+
+def test_mock_execution_adapter_matches_full_and_submit_only_execution_protocols() -> None:
+    adapter = MockExecutionAdapter(accept_orders=True)
+
+    assert isinstance(adapter, ExecutionSubmitter)
+    assert isinstance(adapter, ExecutionAdapter)

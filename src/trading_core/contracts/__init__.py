@@ -3,7 +3,7 @@
 from trading_core.contracts.close_router import CloseIntentRouterProtocol
 from trading_core.contracts.coordinator import RecoveryCoordinatorProtocol
 from trading_core.contracts.context import TimeframeContextProvider
-from trading_core.contracts.execution import ExecutionAdapter
+from trading_core.contracts.execution import ExecutionAdapter, ExecutionSubmitter
 from trading_core.contracts.fills import FillProcessor, PortfolioEngine, PositionEngine
 from trading_core.contracts.gate import ContextGateProtocol
 from trading_core.contracts.guards import PreExecutionGuard
@@ -20,6 +20,7 @@ __all__ = [
     "CloseIntentRouterProtocol",
     "RecoveryCoordinatorProtocol",
     "ExecutionAdapter",
+    "ExecutionSubmitter",
     "EventNormalizer",
     "FillProcessor",
     "MarketContextAssembler",

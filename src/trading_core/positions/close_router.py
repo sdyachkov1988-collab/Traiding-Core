@@ -5,14 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from trading_core.contracts.execution import ExecutionAdapter
+from trading_core.contracts.execution import ExecutionSubmitter
 from trading_core.contracts.guards import PreExecutionGuard
 from trading_core.contracts.orders import OrderIntentBuilder
+from trading_core.contracts.recovery import UnknownStateClassifierProtocol
 from trading_core.domain.close_intent import CloseIntent, CloseRoutingResult, CloseRoutingVerdict
 from trading_core.domain.execution import AdmittedOrder, ExecutionReportKind
 from trading_core.domain.guards import ExecutionAdmissibilityBasis, GuardVerdict
 from trading_core.domain.instruments import ExecutionConstraintBasis, InstrumentExecutionSpec
-from trading_core.recovery import UnknownStateClassifier
 
 
 @dataclass(slots=True)
@@ -21,8 +21,8 @@ class CloseIntentRouter:
 
     order_builder: OrderIntentBuilder
     pre_execution_guard: PreExecutionGuard
-    execution_coordinator: ExecutionAdapter
-    classifier: UnknownStateClassifier
+    execution_coordinator: ExecutionSubmitter
+    classifier: UnknownStateClassifierProtocol
 
     def route(
         self,

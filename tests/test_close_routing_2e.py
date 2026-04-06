@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from trading_core.contracts.close_router import CloseIntentRouterProtocol
-from trading_core.contracts.execution import ExecutionAdapter
+from trading_core.contracts.execution import ExecutionSubmitter
+from trading_core.contracts.recovery import UnknownStateClassifierProtocol
 from trading_core.domain import (
     AdmittedOrder,
     CloseIntent,
@@ -103,7 +104,7 @@ def admissibility_basis() -> ExecutionAdmissibilityBasis:
 
 
 def router_with_classifier(
-    execution_coordinator: ExecutionAdapter | None = None,
+    execution_coordinator: ExecutionSubmitter | None = None,
 ) -> tuple[CloseIntentRouter, UnknownStateClassifier]:
     classifier = UnknownStateClassifier()
     router = CloseIntentRouter(
@@ -312,6 +313,16 @@ def test_close_intent_router_matches_protocol() -> None:
     router, _ = router_with_classifier()
 
     assert isinstance(router, CloseIntentRouterProtocol)
+
+
+def test_close_route_dependencies_match_declared_capability_protocols() -> None:
+    execution_coordinator = RecordingExecutionAdapter()
+    router, classifier = router_with_classifier(execution_coordinator)
+
+    assert isinstance(execution_coordinator, ExecutionSubmitter)
+    assert isinstance(classifier, UnknownStateClassifierProtocol)
+    assert isinstance(router.execution_coordinator, ExecutionSubmitter)
+    assert isinstance(router.classifier, UnknownStateClassifierProtocol)
 
 
 def test_close_router_rejects_when_no_position_is_available() -> None:
