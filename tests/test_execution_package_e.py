@@ -218,6 +218,50 @@ def test_mock_execution_adapter_materialize_fill_rejects_mismatched_report() -> 
         raise AssertionError("Expected mismatched report to be rejected")
 
 
+def test_mock_execution_adapter_can_model_partial_incremental_execution() -> None:
+    adapter = MockExecutionAdapter(
+        accept_orders=True,
+        partial_fill_plan=(Decimal("0.04"), Decimal("0.07")),
+    )
+    admitted_order = build_admitted_order()
+    accepted_report = next(
+        report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.ACCEPTED
+    )
+
+    fills = adapter.materialize_fills(admitted_order, accepted_report)
+
+    assert len(fills) == 2
+    assert fills[0].quantity == Decimal("0.04")
+    assert fills[1].quantity == Decimal("0.07")
+    assert fills[0].metadata["execution_fragment"] == "1"
+    assert fills[1].metadata["execution_fragment"] == "2"
+
+
+def test_mock_execution_adapter_can_model_submit_timeout() -> None:
+    adapter = MockExecutionAdapter(simulate_timeout_on_submit=True)
+    admitted_order = build_admitted_order()
+
+    reports = adapter.submit(admitted_order)
+
+    assert tuple(report.kind for report in reports) == (
+        ExecutionReportKind.SUBMITTED,
+        ExecutionReportKind.TIMEOUT,
+    )
+
+
+def test_mock_execution_adapter_can_model_missing_confirmation() -> None:
+    adapter = MockExecutionAdapter(simulate_missing_confirmation=True)
+    admitted_order = build_admitted_order()
+
+    reports = adapter.submit(admitted_order)
+
+    assert tuple(report.kind for report in reports) == (
+        ExecutionReportKind.SUBMITTED,
+        ExecutionReportKind.ACCEPTED,
+        ExecutionReportKind.PENDING,
+    )
+
+
 def test_execution_handoff_exposes_extended_execution_capabilities() -> None:
     instrument_spec = InstrumentExecutionSpec(
         instrument_id="btc-usdt",

@@ -53,14 +53,7 @@ class IdempotentFillProcessor:
             self._seen_fill_ids.add(fill.fill_id)
             return fill
 
-        fallback_key = (
-            fill.order_intent_id,
-            fill.instrument.instrument_id,
-            fill.side.value,
-            str(fill.quantity),
-            str(fill.price),
-            str(fill.fee),
-        )
+        fallback_key = self._fallback_key(fill)
         if fallback_key in self._seen_fallback_keys:
             raise ValueError(
                 "Duplicate fallback fill identity received by FillProcessor"
@@ -71,3 +64,18 @@ class IdempotentFillProcessor:
             raise ValueError("Duplicate fill_id received by FillProcessor")
         self._seen_fill_ids.add(fill.fill_id)
         return fill
+
+    def _fallback_key(self, fill: Fill) -> tuple[str, ...]:
+        execution_report_id = fill.metadata.get("execution_report_id")
+        execution_fragment = fill.metadata.get("execution_fragment")
+        if execution_report_id is not None:
+            key = ["execution_report_id", execution_report_id]
+            if execution_fragment is not None:
+                key.extend(["execution_fragment", execution_fragment])
+            return tuple(key)
+
+        execution_fact_id = fill.metadata.get("execution_fact_id")
+        if execution_fact_id is not None:
+            return ("execution_fact_id", execution_fact_id)
+
+        return ("fill_id", fill.fill_id)

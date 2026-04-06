@@ -33,7 +33,11 @@ def build_snapshot() -> PersistedStateSnapshot:
     portfolio = PortfolioState(
         portfolio_state_id="portfolio_1",
         cash_balance=Decimal("950"),
+        available_cash_balance=Decimal("940"),
+        reserved_cash_balance=Decimal("10"),
         realized_pnl=Decimal("3.2"),
+        equity=Decimal("1000.5"),
+        balances={"cash": Decimal("950"), "USDT": Decimal("950")},
         positions={"btc-usdt": position},
         updated_at=position.updated_at,
         metadata={"env": "paper"},
@@ -56,7 +60,7 @@ def test_startup_reconciler_matches_equal_local_and_external_state() -> None:
 
     result = reconciler.reconcile(snapshot, external)
 
-    assert result.verdict == StartupReconciliationVerdict.MATCHED
+    assert result.verdict == StartupReconciliationVerdict.CONSISTENT
     assert result.reason is None
 
 
@@ -66,7 +70,7 @@ def test_startup_reconciler_flags_missing_local_snapshot() -> None:
 
     result = reconciler.reconcile(None, external)
 
-    assert result.verdict == StartupReconciliationVerdict.LOCAL_STATE_MISSING
+    assert result.verdict == StartupReconciliationVerdict.INSUFFICIENT_DATA_OR_TIMEOUT
     assert result.reason == "no_local_snapshot"
 
 
@@ -85,7 +89,7 @@ def test_startup_reconciler_flags_cash_mismatch() -> None:
 
     result = reconciler.reconcile(snapshot, external)
 
-    assert result.verdict == StartupReconciliationVerdict.MISMATCHED
+    assert result.verdict == StartupReconciliationVerdict.CANNOT_RECONCILE
     assert result.reason == "cash_balance_mismatch"
 
 
@@ -104,7 +108,7 @@ def test_startup_reconciler_flags_position_quantity_mismatch() -> None:
 
     result = reconciler.reconcile(snapshot, external)
 
-    assert result.verdict == StartupReconciliationVerdict.MISMATCHED
+    assert result.verdict == StartupReconciliationVerdict.CANNOT_RECONCILE
     assert result.reason == "position_quantity_mismatch"
 
 
@@ -118,7 +122,11 @@ def test_startup_reconciler_matches_when_closed_position_is_absent_from_local_sn
     portfolio = PortfolioState(
         portfolio_state_id="portfolio_2",
         cash_balance=Decimal("1000"),
+        available_cash_balance=Decimal("1000"),
+        reserved_cash_balance=Decimal("0"),
         realized_pnl=Decimal("1.0"),
+        equity=Decimal("1000"),
+        balances={"cash": Decimal("1000")},
         positions={},
         updated_at=position.updated_at,
         metadata={"env": "paper"},
@@ -131,5 +139,42 @@ def test_startup_reconciler_matches_when_closed_position_is_absent_from_local_sn
 
     result = SimpleStartupReconciler().reconcile(snapshot, external)
 
-    assert result.verdict == StartupReconciliationVerdict.MATCHED
+    assert result.verdict == StartupReconciliationVerdict.CONSISTENT
     assert result.reason is None
+
+
+def test_startup_reconciler_can_return_corrected_for_zero_quantity_local_position() -> None:
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    position = Position.empty(instrument=instrument)
+    zero_position = Position(
+        position_id=position.position_id,
+        instrument=position.instrument,
+        quantity=Decimal("0"),
+        average_entry_price=Decimal("0"),
+        realized_pnl=Decimal("0"),
+        updated_at=position.updated_at,
+        metadata={},
+    )
+    portfolio = PortfolioState(
+        portfolio_state_id="portfolio_3",
+        cash_balance=Decimal("1000"),
+        available_cash_balance=Decimal("1000"),
+        reserved_cash_balance=Decimal("0"),
+        realized_pnl=Decimal("0"),
+        equity=Decimal("1000"),
+        balances={"cash": Decimal("1000")},
+        positions={"btc-usdt": zero_position},
+        updated_at=position.updated_at,
+        metadata={"env": "paper"},
+    )
+    snapshot = PersistedStateSnapshot.create(portfolio_state=portfolio)
+    external = ExternalStartupBasis.create(cash_balance=Decimal("1000"), positions={})
+
+    result = SimpleStartupReconciler().reconcile(snapshot, external)
+
+    assert result.verdict == StartupReconciliationVerdict.CORRECTED
+    assert result.reason == "zero_quantity_positions_pruned"

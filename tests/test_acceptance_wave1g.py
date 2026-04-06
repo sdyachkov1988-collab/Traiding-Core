@@ -294,7 +294,7 @@ def test_wave1g_restart_restores_state_and_passes_startup_reconciliation(
 
     assert loaded_snapshot.portfolio_state.cash_balance == original_portfolio.cash_balance
     assert loaded_snapshot.last_processed_fill_id == fill.fill_id
-    assert reconciliation_result.verdict is StartupReconciliationVerdict.MATCHED
+    assert reconciliation_result.verdict is StartupReconciliationVerdict.CONSISTENT
 
 
 def test_wave1g_active_path_uses_mtf_strategy_not_legacy_single_bar_strategy() -> None:

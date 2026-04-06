@@ -9,7 +9,12 @@ from pathlib import Path
 
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.portfolio_state import PortfolioState, Position
-from trading_core.domain.state import FillDedupCheckpoint, PersistedStateSnapshot
+from trading_core.domain.execution import ExecutionReportKind
+from trading_core.domain.state import (
+    FillDedupCheckpoint,
+    PersistedOrderRecord,
+    PersistedStateSnapshot,
+)
 
 
 class JsonFileStateStore:
@@ -18,11 +23,17 @@ class JsonFileStateStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
 
-    def save(self, portfolio_state: PortfolioState) -> PersistedStateSnapshot:
+    def save(
+        self,
+        portfolio_state: PortfolioState,
+        *,
+        order_picture: dict[str, PersistedOrderRecord] | None = None,
+    ) -> PersistedStateSnapshot:
         """Persist the portfolio snapshot as the locally owned state view."""
 
         snapshot = PersistedStateSnapshot.create(
             portfolio_state=portfolio_state,
+            order_picture=order_picture,
             metadata={
                 "storage_format": "json",
                 "accounting_policy": "assembly_level_fee_in_cost_basis",
@@ -36,11 +47,13 @@ class JsonFileStateStore:
         portfolio_state: PortfolioState,
         processed_fill_id: str,
         dedup_checkpoint: FillDedupCheckpoint | None = None,
+        order_picture: dict[str, PersistedOrderRecord] | None = None,
     ) -> PersistedStateSnapshot:
         """Persist the portfolio snapshot and processed fill marker atomically."""
 
         snapshot = PersistedStateSnapshot.create(
             portfolio_state=portfolio_state,
+            order_picture=order_picture,
             last_processed_fill_id=processed_fill_id,
             fill_dedup_checkpoint=dedup_checkpoint,
             metadata={
@@ -89,6 +102,17 @@ class JsonFileStateStore:
             "snapshot_id": snapshot.snapshot_id,
             "saved_at": snapshot.saved_at.isoformat(),
             "last_processed_fill_id": snapshot.last_processed_fill_id,
+            "order_picture": {
+                order_intent_id: {
+                    "order_intent_id": order_record.order_intent_id,
+                    "external_order_id": order_record.external_order_id,
+                    "last_report_kind": order_record.last_report_kind.value,
+                    "observed_at": order_record.observed_at.isoformat(),
+                    "reason": order_record.reason,
+                    "metadata": dict(order_record.metadata),
+                }
+                for order_intent_id, order_record in snapshot.order_picture.items()
+            },
             "fill_dedup_checkpoint": (
                 None
                 if snapshot.fill_dedup_checkpoint is None
@@ -107,7 +131,14 @@ class JsonFileStateStore:
             "portfolio_state": {
                 "portfolio_state_id": snapshot.portfolio_state.portfolio_state_id,
                 "cash_balance": str(snapshot.portfolio_state.cash_balance),
+                "available_cash_balance": str(snapshot.portfolio_state.available_cash_balance),
+                "reserved_cash_balance": str(snapshot.portfolio_state.reserved_cash_balance),
                 "realized_pnl": str(snapshot.portfolio_state.realized_pnl),
+                "equity": str(snapshot.portfolio_state.equity),
+                "balances": {
+                    balance_name: str(balance_value)
+                    for balance_name, balance_value in snapshot.portfolio_state.balances.items()
+                },
                 "updated_at": snapshot.portfolio_state.updated_at.isoformat(),
                 "metadata": dict(snapshot.portfolio_state.metadata),
                 "positions": positions,
@@ -147,7 +178,27 @@ class JsonFileStateStore:
         portfolio_state = PortfolioState(
             portfolio_state_id=str(raw_portfolio["portfolio_state_id"]),
             cash_balance=Decimal(str(raw_portfolio["cash_balance"])),
+            available_cash_balance=Decimal(
+                str(raw_portfolio.get("available_cash_balance", raw_portfolio["cash_balance"]))
+            ),
+            reserved_cash_balance=Decimal(
+                str(raw_portfolio.get("reserved_cash_balance", "0"))
+            ),
             realized_pnl=Decimal(str(raw_portfolio["realized_pnl"])),
+            equity=Decimal(
+                str(
+                    raw_portfolio.get(
+                        "equity",
+                        raw_portfolio["cash_balance"],
+                    )
+                )
+            ),
+            balances={
+                str(balance_name): Decimal(str(balance_value))
+                for balance_name, balance_value in dict(
+                    raw_portfolio.get("balances", {"cash": raw_portfolio["cash_balance"]})
+                ).items()
+            },
             positions=positions,
             updated_at=self._parse_utc_datetime(str(raw_portfolio["updated_at"]), "portfolio_state.updated_at"),
             metadata=dict(raw_portfolio["metadata"]),
@@ -156,6 +207,7 @@ class JsonFileStateStore:
         return PersistedStateSnapshot(
             snapshot_id=str(payload["snapshot_id"]),
             portfolio_state=portfolio_state,
+            order_picture=self._deserialize_order_picture(payload.get("order_picture", {})),
             saved_at=self._parse_utc_datetime(str(payload["saved_at"]), "saved_at"),
             last_processed_fill_id=(
                 None
@@ -189,8 +241,8 @@ class JsonFileStateStore:
 
         fallback_keys: list[tuple[str, str, str, str, str, str]] = []
         for raw_key in raw_fallback_keys:
-            if not isinstance(raw_key, (list, tuple)) or len(raw_key) != 6:
-                raise TypeError("fill_dedup_checkpoint.seen_fallback_keys entries must have 6 fields")
+            if not isinstance(raw_key, (list, tuple)):
+                raise TypeError("fill_dedup_checkpoint.seen_fallback_keys entries must be sequences")
             fallback_keys.append(tuple(str(part) for part in raw_key))
 
         return FillDedupCheckpoint(
@@ -198,6 +250,36 @@ class JsonFileStateStore:
             seen_external_fill_ids=tuple(str(external_id) for external_id in raw_external_ids),
             seen_fallback_keys=tuple(fallback_keys),
         )
+
+    def _deserialize_order_picture(
+        self,
+        raw_order_picture: object,
+    ) -> dict[str, PersistedOrderRecord]:
+        if not isinstance(raw_order_picture, dict):
+            raise TypeError(
+                f"expected dict, got {type(raw_order_picture).__name__}"
+            )
+
+        order_picture: dict[str, PersistedOrderRecord] = {}
+        for order_intent_id, raw_record in raw_order_picture.items():
+            if not isinstance(raw_record, dict):
+                raise TypeError(f"expected dict, got {type(raw_record).__name__}")
+            order_picture[str(order_intent_id)] = PersistedOrderRecord(
+                order_intent_id=str(raw_record["order_intent_id"]),
+                external_order_id=(
+                    None
+                    if raw_record.get("external_order_id") is None
+                    else str(raw_record["external_order_id"])
+                ),
+                last_report_kind=ExecutionReportKind(str(raw_record["last_report_kind"])),
+                observed_at=self._parse_utc_datetime(
+                    str(raw_record["observed_at"]),
+                    "order_picture.observed_at",
+                ),
+                reason=None if raw_record.get("reason") is None else str(raw_record["reason"]),
+                metadata=dict(raw_record.get("metadata", {})),
+            )
+        return order_picture
 
     def _parse_utc_datetime(self, raw_value: str, field_name: str) -> datetime:
         parsed = datetime.fromisoformat(raw_value)

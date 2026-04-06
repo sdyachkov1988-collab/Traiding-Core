@@ -52,6 +52,7 @@ class Fill:
         quantity: Decimal,
         price: Decimal,
         fee: Decimal = Decimal("0"),
+        executed_at: datetime | None = None,
         external_fill_id: str | None = None,
         metadata: Mapping[str, str] | None = None,
     ) -> "Fill":
@@ -77,7 +78,7 @@ class Fill:
             quantity=quantity,
             price=price,
             fee=fee,
-            executed_at=utc_now(),
+            executed_at=executed_at or utc_now(),
             external_fill_id=external_fill_id,
             metadata=dict(metadata or {}),
         )

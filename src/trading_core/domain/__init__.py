@@ -30,7 +30,7 @@ from trading_core.domain.risk import (
     RiskDecision,
     RiskVerdict,
 )
-from trading_core.domain.state import PersistedStateSnapshot
+from trading_core.domain.state import PersistedOrderRecord, PersistedStateSnapshot
 from trading_core.domain.strategy import NoAction, StrategyIntent
 from trading_core.domain.timeframe import ClosedBar, TimeframeContext, TimeframeSyncEvent
 from trading_core.domain.unknown import (
@@ -69,6 +69,7 @@ __all__ = [
     "OrderType",
     "PortfolioState",
     "PortfolioRiskBasis",
+    "PersistedOrderRecord",
     "PersistedStateSnapshot",
     "Position",
     "ReconciliationMode",

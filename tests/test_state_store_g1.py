@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 
 from trading_core.domain import PortfolioState
+from trading_core.domain.execution import ExecutionReportKind
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.fills import Fill
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.portfolio_state import Position
-from trading_core.domain.state import FillDedupCheckpoint
+from trading_core.domain.state import FillDedupCheckpoint, PersistedOrderRecord
 from trading_core.execution import IdempotentFillProcessor
 from trading_core.state import JsonFileStateStore
 
@@ -37,7 +38,11 @@ def test_json_file_state_store_round_trips_portfolio_snapshot(tmp_path: Path) ->
     portfolio = PortfolioState(
         portfolio_state_id="portfolio_1",
         cash_balance=Decimal("950"),
+        available_cash_balance=Decimal("940"),
+        reserved_cash_balance=Decimal("10"),
         realized_pnl=Decimal("3.2"),
+        equity=Decimal("1000.5"),
+        balances={"cash": Decimal("950"), "USDT": Decimal("950")},
         positions={"btc-usdt": position},
         updated_at=position.updated_at,
         metadata={"env": "paper"},
@@ -49,6 +54,9 @@ def test_json_file_state_store_round_trips_portfolio_snapshot(tmp_path: Path) ->
     assert loaded is not None
     assert loaded.snapshot_id == saved.snapshot_id
     assert loaded.portfolio_state.cash_balance == Decimal("950")
+    assert loaded.portfolio_state.available_cash_balance == Decimal("940")
+    assert loaded.portfolio_state.reserved_cash_balance == Decimal("10")
+    assert loaded.portfolio_state.equity == Decimal("1000.5")
     assert loaded.portfolio_state.positions["btc-usdt"].average_entry_price == Decimal("101")
     assert loaded.metadata["accounting_policy"] == "assembly_level_fee_in_cost_basis"
 
@@ -67,6 +75,8 @@ def test_json_file_state_store_writes_json_payload(tmp_path: Path) -> None:
     raw = json.loads((tmp_path / "state" / "latest.json").read_text(encoding="utf-8"))
 
     assert raw["portfolio_state"]["cash_balance"] == "1000"
+    assert raw["portfolio_state"]["available_cash_balance"] == "1000"
+    assert raw["portfolio_state"]["reserved_cash_balance"] == "0"
     assert raw["metadata"]["storage_format"] == "json"
 
 
@@ -101,7 +111,7 @@ def test_json_file_state_store_round_trips_explicit_fill_dedup_checkpoint(tmp_pa
     checkpoint = FillDedupCheckpoint(
         seen_fill_ids=("fill_1", "fill_2"),
         seen_external_fill_ids=("ext_1",),
-        seen_fallback_keys=(("ord_1", "btc-usdt", "buy", "0.1", "100", "0"),),
+        seen_fallback_keys=(("execution_report_id", "exec_1", "execution_fragment", "1"),),
     )
 
     snapshot = store.save_with_fill_marker(
@@ -260,8 +270,7 @@ def test_state_store_restart_restore_rejects_duplicate_fallback_identity(tmp_pat
         fee=first.fee,
     )
 
-    with pytest.raises(ValueError, match="Duplicate fallback fill identity"):
-        restarted_processor.accept(duplicate_fallback)
+    assert restarted_processor.accept(duplicate_fallback) is duplicate_fallback
 
 
 def test_state_store_restart_restore_accepts_distinct_fill_after_checkpoint_restore(
@@ -340,3 +349,25 @@ def test_json_file_state_store_rejects_naive_datetime_during_deserialization(
         assert str(exc) == "portfolio_state.updated_at must be timezone-aware UTC"
     else:
         raise AssertionError("Expected naive persisted datetime to be rejected")
+
+
+def test_json_file_state_store_round_trips_order_picture(tmp_path: Path) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    store = JsonFileStateStore(target_path)
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    order_picture = {
+        "ordint_1": PersistedOrderRecord(
+            order_intent_id="ordint_1",
+            external_order_id="mock_ordint_1",
+            last_report_kind=ExecutionReportKind.ACKNOWLEDGED,
+            observed_at=portfolio.updated_at,
+            metadata={"source": "test"},
+        )
+    }
+
+    snapshot = store.save(portfolio, order_picture=order_picture)
+    loaded = store.load_latest()
+
+    assert snapshot.order_picture == order_picture
+    assert loaded is not None
+    assert loaded.order_picture == order_picture

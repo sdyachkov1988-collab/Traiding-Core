@@ -45,11 +45,15 @@ class Position:
 
 @dataclass(frozen=True, slots=True)
 class PortfolioState:
-    """Minimal portfolio truth for Minimal Core v1."""
+    """Portfolio truth for the first fill-driven accounting spine."""
 
     portfolio_state_id: str
     cash_balance: Decimal
+    available_cash_balance: Decimal
+    reserved_cash_balance: Decimal
     realized_pnl: Decimal
+    equity: Decimal
+    balances: Mapping[str, Decimal]
     positions: Mapping[str, Position]
     updated_at: datetime
     metadata: Mapping[str, str] = field(default_factory=dict)
@@ -67,8 +71,15 @@ class PortfolioState:
         return cls(
             portfolio_state_id=new_internal_id("portfolio"),
             cash_balance=cash_balance,
+            available_cash_balance=cash_balance,
+            reserved_cash_balance=Decimal("0"),
             realized_pnl=Decimal("0"),
+            equity=cash_balance,
+            balances={"cash": cash_balance},
             positions={},
             updated_at=utc_now(),
-            metadata=dict(metadata or {}),
+            metadata={
+                "equity_valuation_basis": "cash_plus_position_cost_basis",
+                **dict(metadata or {}),
+            },
         )

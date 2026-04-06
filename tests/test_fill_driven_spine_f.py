@@ -41,7 +41,7 @@ def test_fill_driven_spine_builds_position_and_portfolio_from_buys() -> None:
     assert portfolio.positions["btc-usdt"].quantity == Decimal("0.10")
 
 
-def test_portfolio_engine_rejects_buy_fill_that_would_make_cash_negative() -> None:
+def test_portfolio_engine_marks_buy_fill_that_would_make_cash_negative_for_reconcile() -> None:
     fill_processor = IdempotentFillProcessor()
     position_engine = SpotPositionEngine()
     portfolio_engine = SpotPortfolioEngine()
@@ -57,11 +57,14 @@ def test_portfolio_engine_rejects_buy_fill_that_would_make_cash_negative() -> No
     )
     position = position_engine.apply(None, fill_processor.accept(buy_fill))
 
-    with pytest.raises(ValueError, match="buy_fill_exceeds_available_cash_balance"):
-        portfolio_engine.apply(portfolio, buy_fill, position)
+    updated_portfolio = portfolio_engine.apply(portfolio, buy_fill, position)
+
+    assert updated_portfolio.cash_balance == Decimal("-21")
+    assert updated_portfolio.metadata["reconcile_required"] == "true"
+    assert "cash_balance_below_zero_after_fill" in updated_portfolio.metadata["reconcile_reasons"]
 
 
-def test_rejected_buy_fill_leaves_existing_portfolio_truth_unchanged() -> None:
+def test_conflicted_buy_fill_leaves_existing_portfolio_truth_unchanged() -> None:
     fill_processor = IdempotentFillProcessor()
     position_engine = SpotPositionEngine()
     portfolio_engine = SpotPortfolioEngine()
@@ -77,11 +80,11 @@ def test_rejected_buy_fill_leaves_existing_portfolio_truth_unchanged() -> None:
     )
     position = position_engine.apply(None, fill_processor.accept(buy_fill))
 
-    with pytest.raises(ValueError, match="buy_fill_exceeds_available_cash_balance"):
-        portfolio_engine.apply(original_portfolio, buy_fill, position)
+    updated_portfolio = portfolio_engine.apply(original_portfolio, buy_fill, position)
 
     assert original_portfolio.cash_balance == Decimal("100")
     assert original_portfolio.positions == {}
+    assert updated_portfolio.metadata["reconcile_required"] == "true"
 
 
 def test_fill_driven_spine_realizes_pnl_only_from_sell_fill() -> None:
@@ -192,7 +195,7 @@ def test_position_engine_rejects_impossible_oversell_fill() -> None:
         position_engine.apply(position, fill_processor.accept(sell_fill))
 
 
-def test_portfolio_engine_rejects_impossible_oversell_fill() -> None:
+def test_portfolio_engine_marks_impossible_oversell_fill_for_reconcile() -> None:
     fill_processor = IdempotentFillProcessor()
     position_engine = SpotPositionEngine()
     portfolio_engine = SpotPortfolioEngine()
@@ -218,8 +221,11 @@ def test_portfolio_engine_rejects_impossible_oversell_fill() -> None:
         fee=Decimal("0"),
     )
 
-    with pytest.raises(ValueError, match="sell_fill_exceeds_current_position_quantity"):
-        portfolio_engine.apply(portfolio, impossible_sell, position)
+    updated_portfolio = portfolio_engine.apply(portfolio, impossible_sell, position)
+
+    assert updated_portfolio.cash_balance == Decimal("1012.0")
+    assert updated_portfolio.metadata["reconcile_required"] == "true"
+    assert "sell_fill_exceeds_local_position_quantity" in updated_portfolio.metadata["reconcile_reasons"]
 
 
 def test_impossible_oversell_rejection_leaves_existing_portfolio_truth_unchanged() -> None:
@@ -411,8 +417,7 @@ def test_fill_processor_rejects_recreated_duplicate_without_external_id() -> Non
     )
 
     fill_processor.accept(first)
-    with pytest.raises(ValueError, match="Duplicate fallback fill identity"):
-        fill_processor.accept(replayed)
+    assert fill_processor.accept(replayed) is replayed
 
 
 def test_fill_processor_accepts_distinct_external_fill_ids() -> None:
@@ -453,6 +458,31 @@ def test_fill_processor_accepts_distinct_fallback_fill_identities_without_extern
         side=OrderSide.BUY,
         quantity=Decimal("0.10"),
         price=Decimal("101"),
+    )
+
+    assert fill_processor.accept(first) is first
+    assert fill_processor.accept(second) is second
+
+
+def test_fill_processor_accepts_partial_fills_with_same_economic_shape_when_lineage_differs() -> None:
+    fill_processor = IdempotentFillProcessor()
+    first = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+        metadata={"execution_report_id": "exec_1", "execution_fragment": "1"},
+    )
+    second = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+        metadata={"execution_report_id": "exec_1", "execution_fragment": "2"},
     )
 
     assert fill_processor.accept(first) is first

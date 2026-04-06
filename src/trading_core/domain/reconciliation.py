@@ -14,9 +14,10 @@ from trading_core.domain.common import new_internal_id, require_utc_datetime, ut
 class StartupReconciliationVerdict(StrEnum):
     """Formal startup-only reconciliation verdict."""
 
-    MATCHED = "matched"
-    MISMATCHED = "mismatched"
-    LOCAL_STATE_MISSING = "local_state_missing"
+    CONSISTENT = "consistent"
+    CORRECTED = "corrected"
+    CANNOT_RECONCILE = "cannot_reconcile"
+    INSUFFICIENT_DATA_OR_TIMEOUT = "insufficient_data_or_timeout"
 
 
 @dataclass(frozen=True, slots=True)

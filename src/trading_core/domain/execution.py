@@ -16,10 +16,12 @@ class ExecutionReportKind(StrEnum):
     """Normalized execution-side update kinds returned by the boundary."""
 
     SUBMITTED = "submitted"
+    PENDING = "pending"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     ACKNOWLEDGED = "acknowledged"
     CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
 
 
 @dataclass(frozen=True, slots=True)
