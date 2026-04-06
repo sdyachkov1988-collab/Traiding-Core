@@ -100,4 +100,7 @@ class FreshnessPolicy:
         """Return True when the bar age stays within the configured limit."""
 
         bar_close_time = bar.bar_time + timeframe_duration(bar.timeframe)
-        return (now - bar_close_time).total_seconds() <= self.max_age_seconds
+        age_seconds = (now - bar_close_time).total_seconds()
+        if age_seconds < 0:
+            return False
+        return age_seconds <= self.max_age_seconds

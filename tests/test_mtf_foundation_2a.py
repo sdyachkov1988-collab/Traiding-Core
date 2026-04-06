@@ -80,6 +80,34 @@ def test_closed_bar_uses_decimal_fields_and_utc_datetime() -> None:
     assert bar.is_closed is True
 
 
+def test_closed_bar_rejects_invalid_ohlc_shape() -> None:
+    with pytest.raises(ValueError, match="open_must_be_within_high_low_range"):
+        ClosedBar(
+            timeframe="15m",
+            open=Decimal("120"),
+            high=Decimal("110"),
+            low=Decimal("95"),
+            close=Decimal("105"),
+            volume=Decimal("10"),
+            bar_time=utc_now(),
+            is_closed=True,
+        )
+
+
+def test_closed_bar_rejects_negative_volume() -> None:
+    with pytest.raises(ValueError, match="volume_must_be_non_negative"):
+        ClosedBar(
+            timeframe="15m",
+            open=Decimal("100"),
+            high=Decimal("110"),
+            low=Decimal("95"),
+            close=Decimal("105"),
+            volume=Decimal("-1"),
+            bar_time=utc_now(),
+            is_closed=True,
+        )
+
+
 def test_instrument_timeframe_store_updates_and_returns_latest_bar() -> None:
     store = InstrumentTimeframeStore("btc-usdt")
     bar = make_closed_bar(timeframe="15m")
@@ -114,6 +142,51 @@ def test_instrument_timeframe_store_rejects_non_monotonic_bar_updates() -> None:
                 instrument_id="btc-usdt",
                 timeframe="15m",
                 bar=older_bar,
+            )
+        )
+
+
+def test_instrument_timeframe_store_rejects_timeframe_payload_mismatch() -> None:
+    store = InstrumentTimeframeStore("btc-usdt")
+
+    with pytest.raises(ValueError, match="timeframe_event_and_bar_timeframe_must_match"):
+        store.update(
+            TimeframeSyncEvent.create(
+                instrument_id="btc-usdt",
+                timeframe="15m",
+                bar=make_closed_bar(timeframe="1h"),
+            )
+        )
+
+
+def test_instrument_timeframe_store_rejects_closed_bar_slot_overwrite() -> None:
+    store = InstrumentTimeframeStore("btc-usdt")
+    bar_time = utc_now().replace(minute=15, second=0, microsecond=0)
+    first_bar = make_closed_bar(timeframe="15m", bar_time=bar_time)
+    conflicting_bar = ClosedBar(
+        timeframe="15m",
+        open=Decimal("101"),
+        high=Decimal("111"),
+        low=Decimal("96"),
+        close=Decimal("106"),
+        volume=Decimal("11"),
+        bar_time=bar_time,
+        is_closed=True,
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=first_bar,
+        )
+    )
+
+    with pytest.raises(ValueError, match="closed_bar_slot_overwrite_not_allowed"):
+        store.update(
+            TimeframeSyncEvent.create(
+                instrument_id="btc-usdt",
+                timeframe="15m",
+                bar=conflicting_bar,
             )
         )
 
@@ -156,7 +229,7 @@ def test_freshness_policy_returns_false_for_stale_bar() -> None:
 
 def test_freshness_policy_returns_true_for_fresh_bar() -> None:
     policy = FreshnessPolicy(max_age_seconds=60)
-    fresh_bar = make_closed_bar(timeframe="15m", bar_time=utc_now() - timedelta(seconds=10))
+    fresh_bar = make_closed_bar(timeframe="15m", bar_time=utc_now() - timedelta(minutes=15, seconds=10))
 
     assert policy.is_fresh(fresh_bar, utc_now()) is True
 
@@ -192,6 +265,13 @@ def test_freshness_policy_counts_1w_bar_age_from_close_time() -> None:
     )
 
     assert policy.is_fresh(just_closed_weekly_bar, now) is True
+
+
+def test_freshness_policy_rejects_future_bar() -> None:
+    policy = FreshnessPolicy(max_age_seconds=60)
+    future_bar = make_closed_bar(timeframe="15m", bar_time=utc_now() + timedelta(minutes=15))
+
+    assert policy.is_fresh(future_bar, utc_now()) is False
 
 
 def test_bar_alignment_policy_supports_daily_and_weekly_timeframes() -> None:
@@ -274,19 +354,21 @@ def test_timeframe_context_assembler_returns_context_when_ready() -> None:
 
 def test_timeframe_context_contains_readiness_and_freshness_flags() -> None:
     store = InstrumentTimeframeStore("btc-usdt")
-    now = utc_now().replace(minute=15, second=0, microsecond=0)
+    now = utc_now().replace(second=0, microsecond=0)
+    entry_bar_time = now - timedelta(minutes=75)
+    trend_bar_time = entry_bar_time.replace(minute=0)
     store.update(
         TimeframeSyncEvent.create(
             instrument_id="btc-usdt",
             timeframe="15m",
-            bar=make_closed_bar(timeframe="15m", bar_time=now),
+            bar=make_closed_bar(timeframe="15m", bar_time=entry_bar_time),
         )
     )
     store.update(
         TimeframeSyncEvent.create(
             instrument_id="btc-usdt",
             timeframe="1h",
-            bar=make_closed_bar(timeframe="1h", bar_time=now.replace(minute=0)),
+            bar=make_closed_bar(timeframe="1h", bar_time=trend_bar_time),
         )
     )
     assembler = TimeframeContextAssembler(

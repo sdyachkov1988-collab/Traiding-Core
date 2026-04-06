@@ -56,9 +56,10 @@ def make_context(
     bars: dict[str, ClosedBar] | None = None,
     history_depths: dict[str, int] | None = None,
 ) -> TimeframeContext:
+    now = utc_now().replace(second=0, microsecond=0)
     bar_map = bars or {
-        "15m": make_closed_bar(timeframe="15m"),
-        "1h": make_closed_bar(timeframe="1h"),
+        "15m": make_closed_bar(timeframe="15m", bar_time=now - timedelta(minutes=15)),
+        "1h": make_closed_bar(timeframe="1h", bar_time=now - timedelta(hours=1)),
     }
     return TimeframeContext.create(
         instrument_id="btc-usdt",
@@ -101,6 +102,24 @@ def test_context_gate_defers_when_timeframe_not_ready() -> None:
     assert outcome.reason == "timeframe_not_ready"
 
 
+def test_context_gate_defers_when_required_timeframe_is_missing_from_context() -> None:
+    gate = ContextGate(
+        warmup_bars=2,
+        freshness_policy=FreshnessPolicy(max_age_seconds=300),
+        required_timeframes=("15m", "1h"),
+    )
+    context = make_context(
+        bars={"15m": make_closed_bar(timeframe="15m")},
+        readiness_flags={"15m": True, "1h": True},
+        freshness_flags={"15m": True, "1h": True},
+    )
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.DEFERRED
+    assert outcome.reason == "required_timeframe_missing"
+
+
 def test_context_gate_defers_when_warmup_not_reached() -> None:
     gate = ContextGate(warmup_bars=3, freshness_policy=FreshnessPolicy(max_age_seconds=300))
     context = make_context(history_depths={"15m": 2, "1h": 1})
@@ -112,8 +131,12 @@ def test_context_gate_defers_when_warmup_not_reached() -> None:
 
 
 def test_context_gate_admits_when_all_conditions_are_met() -> None:
-    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
-    context = make_context(history_depths={"15m": 2, "1h": 1})
+    gate = ContextGate(
+        warmup_bars=2,
+        freshness_policy=FreshnessPolicy(max_age_seconds=300),
+        required_timeframes=("15m", "1h"),
+    )
+    context = make_context(history_depths={"15m": 2, "1h": 2})
 
     outcome = gate.check(context)
 
@@ -123,7 +146,7 @@ def test_context_gate_admits_when_all_conditions_are_met() -> None:
 
 def test_gate_outcome_contains_bars_seen_and_warmup_required() -> None:
     gate = ContextGate(warmup_bars=3, freshness_policy=FreshnessPolicy(max_age_seconds=300))
-    context = make_context(history_depths={"15m": 4, "1h": 1})
+    context = make_context(history_depths={"15m": 4, "1h": 4})
 
     outcome = gate.check(context)
 
@@ -131,6 +154,22 @@ def test_gate_outcome_contains_bars_seen_and_warmup_required() -> None:
     assert outcome.bars_seen == 4
     assert outcome.warmup_required == 3
     assert outcome.checked_at.tzinfo == timezone.utc
+
+
+def test_context_gate_uses_context_warmup_thresholds_when_higher_than_default() -> None:
+    gate = ContextGate(
+        warmup_bars=2,
+        freshness_policy=FreshnessPolicy(max_age_seconds=300),
+        required_timeframes=("15m", "1h"),
+    )
+    context = make_context(history_depths={"15m": 3, "1h": 3})
+    object.__setattr__(context, "metadata", {"warmup_thresholds": "15m:4,1h:2"})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.DEFERRED
+    assert outcome.reason == "warmup_not_reached"
+    assert outcome.warmup_required == 4
 
 
 def test_gate_verdict_strenum_values_are_correct() -> None:
@@ -157,7 +196,8 @@ def test_admitted_context_can_flow_into_strategy_intent() -> None:
         )
 
     store = InstrumentTimeframeStore("btc-usdt")
-    first_entry_bar = make_closed_bar(timeframe="15m")
+    now = utc_now().replace(second=0, microsecond=0)
+    first_entry_bar = make_closed_bar(timeframe="15m", bar_time=now - timedelta(minutes=90))
     second_entry_bar = make_closed_bar(
         timeframe="15m",
         bar_time=first_entry_bar.bar_time + timedelta(minutes=15),
@@ -174,6 +214,16 @@ def test_admitted_context_can_flow_into_strategy_intent() -> None:
             instrument_id="btc-usdt",
             timeframe="15m",
             bar=second_entry_bar,
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=make_closed_bar(
+                timeframe="1h",
+                bar_time=second_entry_bar.bar_time.replace(minute=0) - timedelta(hours=1),
+            ),
         )
     )
     store.update(

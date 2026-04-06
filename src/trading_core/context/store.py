@@ -20,9 +20,15 @@ class InstrumentTimeframeStore:
 
         if event.instrument_id != self.instrument_id:
             raise ValueError("TimeframeSyncEvent instrument_id does not match store")
+        if event.timeframe != event.bar.timeframe:
+            raise ValueError("timeframe_event_and_bar_timeframe_must_match")
         existing_bar = self._bars.get(event.timeframe)
         if existing_bar is not None and event.bar.bar_time < existing_bar.bar_time:
             raise ValueError("timeframe_bar_time_must_be_monotonic")
+        if existing_bar is not None and event.bar.bar_time == existing_bar.bar_time:
+            if event.bar != existing_bar:
+                raise ValueError("closed_bar_slot_overwrite_not_allowed")
+            return
 
         self._bars[event.timeframe] = event.bar
         if existing_bar is None:

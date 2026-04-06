@@ -25,6 +25,24 @@ class ClosedBar:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.bar_time, "bar_time")
+        if self.is_closed is not True:
+            raise ValueError("closed_bar_must_be_marked_closed")
+        if self.open <= Decimal("0"):
+            raise ValueError("open_must_be_positive")
+        if self.high <= Decimal("0"):
+            raise ValueError("high_must_be_positive")
+        if self.low <= Decimal("0"):
+            raise ValueError("low_must_be_positive")
+        if self.close <= Decimal("0"):
+            raise ValueError("close_must_be_positive")
+        if self.high < self.low:
+            raise ValueError("high_must_be_greater_than_or_equal_to_low")
+        if not (self.low <= self.open <= self.high):
+            raise ValueError("open_must_be_within_high_low_range")
+        if not (self.low <= self.close <= self.high):
+            raise ValueError("close_must_be_within_high_low_range")
+        if self.volume < Decimal("0"):
+            raise ValueError("volume_must_be_non_negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +92,7 @@ class TimeframeContext:
     alignment_policy: str
     created_at: datetime
     history_depths: Mapping[str, int] = field(default_factory=dict)
+    metadata: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.created_at, "created_at")
@@ -90,6 +109,7 @@ class TimeframeContext:
         readiness_flags: Mapping[str, bool],
         freshness_flags: Mapping[str, bool],
         alignment_policy: str,
+        metadata: Mapping[str, str] | None = None,
     ) -> "TimeframeContext":
         """Build a formal timeframe context for Wave 2A."""
 
@@ -104,4 +124,5 @@ class TimeframeContext:
             freshness_flags=dict(freshness_flags),
             alignment_policy=alignment_policy,
             created_at=utc_now(),
+            metadata=dict(metadata or {}),
         )
