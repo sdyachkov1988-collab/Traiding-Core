@@ -50,6 +50,15 @@ class OrderIntent:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.created_at, "created_at")
+        if self.quantity <= Decimal("0"):
+            raise ValueError("quantity_must_be_positive")
+        if self.order_type is OrderType.LIMIT:
+            if self.limit_price is None:
+                raise ValueError("limit_order_requires_limit_price")
+            if self.limit_price <= Decimal("0"):
+                raise ValueError("limit_price_must_be_positive")
+        elif self.limit_price is not None:
+            raise ValueError("market_order_must_not_define_limit_price")
 
     @classmethod
     def create(

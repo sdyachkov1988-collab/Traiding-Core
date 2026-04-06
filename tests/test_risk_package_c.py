@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from trading_core.domain import InstrumentRef, InstrumentRiskBasis, OrderSide, PortfolioRiskBasis, RiskVerdict
 from trading_core.input import DictEventNormalizer, SimpleMarketContextAssembler
 from trading_core.risk import ConfidenceCapRiskEvaluator
@@ -375,23 +377,9 @@ def test_confidence_cap_risk_evaluator_rejects_sell_when_position_after_cap_is_b
 
 
 def test_confidence_cap_risk_evaluator_rejects_non_positive_reference_price() -> None:
-    intent = build_intent()
-    evaluator = ConfidenceCapRiskEvaluator(min_confidence=Decimal("0.01"))
-
-    decision = evaluator.evaluate(
-        intent=intent,
-        instrument_basis=InstrumentRiskBasis(
-            instrument_id="btc-usdt",
-            min_order_quantity=Decimal("0.01"),
-            max_order_quantity=Decimal("10"),
-            quantity_step=Decimal("0.01"),
-        ),
-        portfolio_basis=PortfolioRiskBasis(
+    with pytest.raises(ValueError, match="reference_price_must_be_positive"):
+        PortfolioRiskBasis(
             available_capital=Decimal("500.00"),
             max_capital_per_trade=Decimal("250.00"),
             reference_price=Decimal("0"),
-        ),
-    )
-
-    assert decision.verdict == RiskVerdict.REJECTED
-    assert decision.rejection_reason == "reference_price_not_positive"
+        )

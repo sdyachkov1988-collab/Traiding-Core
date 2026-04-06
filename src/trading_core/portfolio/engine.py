@@ -64,6 +64,6 @@ class SpotPortfolioEngine:
             equity=next_cash_balance + position_cost_basis,
             balances=next_balances,
             positions=next_positions,
-            updated_at=fill.executed_at,
+            updated_at=max(current.updated_at, fill.executed_at),
             metadata=next_metadata,
         )

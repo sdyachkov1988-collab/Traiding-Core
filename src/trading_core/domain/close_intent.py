@@ -34,6 +34,10 @@ class CloseIntent:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.created_at, "created_at")
+        if self.quantity <= Decimal("0"):
+            raise ValueError("close_quantity_must_be_positive")
+        if self.reason.strip() == "":
+            raise ValueError("close_reason_must_not_be_blank")
 
     @classmethod
     def create(
@@ -70,6 +74,8 @@ class CloseRoutingResult:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.created_at, "created_at")
+        if self.verdict is CloseRoutingVerdict.ADMITTED and self.admitted_order_id is None:
+            raise ValueError("admitted_close_route_requires_admitted_order_id")
 
     @classmethod
     def create(

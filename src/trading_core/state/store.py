@@ -31,6 +31,9 @@ class JsonFileStateStore:
     ) -> PersistedStateSnapshot:
         """Persist the portfolio snapshot as the locally owned state view."""
 
+        if not self._is_pristine_snapshot_candidate(portfolio_state, order_picture):
+            raise ValueError("save_requires_pristine_state_or_use_save_with_fill_marker")
+
         snapshot = PersistedStateSnapshot.create(
             portfolio_state=portfolio_state,
             order_picture=order_picture,
@@ -79,6 +82,19 @@ class JsonFileStateStore:
         temp_path = self._path.with_suffix(".tmp")
         temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         temp_path.replace(self._path)
+
+    def _is_pristine_snapshot_candidate(
+        self,
+        portfolio_state: PortfolioState,
+        order_picture: dict[str, PersistedOrderRecord] | None,
+    ) -> bool:
+        return (
+            portfolio_state.positions == {}
+            and portfolio_state.realized_pnl == Decimal("0")
+            and portfolio_state.reserved_cash_balance == Decimal("0")
+            and portfolio_state.metadata.get("reconcile_required") != "true"
+            and not order_picture
+        )
 
     def _serialize_snapshot(self, snapshot: PersistedStateSnapshot) -> dict[str, object]:
         positions = {}

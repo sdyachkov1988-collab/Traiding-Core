@@ -72,6 +72,6 @@ class SpotPositionEngine:
             quantity=new_quantity,
             average_entry_price=average_entry_price,
             realized_pnl=realized_pnl,
-            updated_at=fill.executed_at,
+            updated_at=max(position.updated_at, fill.executed_at),
             metadata=position.metadata,
         )

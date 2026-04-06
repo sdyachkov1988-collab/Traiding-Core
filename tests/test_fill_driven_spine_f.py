@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
 
 from trading_core.domain import Fill, OrderSide, PortfolioState
-from trading_core.domain.common import InstrumentRef
+from trading_core.domain.common import InstrumentRef, utc_now
 from trading_core.execution import IdempotentFillProcessor
 from trading_core.portfolio import SpotPortfolioEngine
 from trading_core.positions import SpotPositionEngine
@@ -557,3 +558,59 @@ def test_fill_create_accepts_negative_fee_rebate() -> None:
     )
 
     assert fill.fee == Decimal("-0.25")
+
+
+def test_position_updated_at_does_not_go_backward_on_late_fill() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+    buy_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        executed_at=utc_now(),
+    )
+    position = position_engine.apply(None, fill_processor.accept(buy_fill))
+    late_fill = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.01"),
+        price=Decimal("101"),
+        executed_at=position.updated_at - timedelta(minutes=5),
+    )
+
+    updated_position = position_engine.apply(position, fill_processor.accept(late_fill))
+
+    assert updated_position.updated_at == position.updated_at
+
+
+def test_portfolio_updated_at_does_not_go_backward_on_late_fill() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+    portfolio_engine = SpotPortfolioEngine()
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    buy_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        executed_at=utc_now(),
+    )
+    position = position_engine.apply(None, fill_processor.accept(buy_fill))
+    portfolio = portfolio_engine.apply(portfolio, buy_fill, position)
+    late_fill = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.01"),
+        price=Decimal("101"),
+        executed_at=portfolio.updated_at - timedelta(minutes=5),
+    )
+    late_position = position_engine.apply(position, fill_processor.accept(late_fill))
+
+    updated_portfolio = portfolio_engine.apply(portfolio, late_fill, late_position)
+
+    assert updated_portfolio.updated_at == portfolio.updated_at

@@ -30,6 +30,16 @@ class InstrumentRiskBasis:
     quantity_step: Decimal
     instrument_tradable: bool = True
 
+    def __post_init__(self) -> None:
+        if self.min_order_quantity <= Decimal("0"):
+            raise ValueError("min_order_quantity_must_be_positive")
+        if self.max_order_quantity <= Decimal("0"):
+            raise ValueError("max_order_quantity_must_be_positive")
+        if self.quantity_step <= Decimal("0"):
+            raise ValueError("quantity_step_must_be_positive")
+        if self.max_order_quantity < self.min_order_quantity:
+            raise ValueError("max_order_quantity_must_be_greater_than_or_equal_to_min_order_quantity")
+
 
 @dataclass(frozen=True, slots=True)
 class PortfolioRiskBasis:
@@ -40,6 +50,16 @@ class PortfolioRiskBasis:
     reference_price: Decimal
     current_position_quantity: Decimal = Decimal("0")
     portfolio_tradable: bool = True
+
+    def __post_init__(self) -> None:
+        if self.available_capital < Decimal("0"):
+            raise ValueError("available_capital_must_be_non_negative")
+        if self.max_capital_per_trade <= Decimal("0"):
+            raise ValueError("max_capital_per_trade_must_be_positive")
+        if self.reference_price <= Decimal("0"):
+            raise ValueError("reference_price_must_be_positive")
+        if self.current_position_quantity < Decimal("0"):
+            raise ValueError("current_position_quantity_must_be_non_negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +78,11 @@ class RiskDecision:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.created_at, "created_at")
+        if self.verdict in (RiskVerdict.APPROVED, RiskVerdict.CAPPED):
+            if self.approved_quantity is None or self.approved_quantity <= Decimal("0"):
+                raise ValueError("approved_or_capped_risk_decision_requires_positive_quantity")
+        if self.verdict is RiskVerdict.REJECTED and self.approved_quantity is not None:
+            raise ValueError("rejected_risk_decision_must_not_define_approved_quantity")
 
     @classmethod
     def create(

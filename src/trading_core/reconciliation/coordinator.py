@@ -13,7 +13,7 @@ from trading_core.domain.reconciliation_extended import (
 )
 from trading_core.domain.unknown import SystemModeTransition
 from trading_core.reconciliation.source_of_truth import SourceOfTruthPolicy
-from trading_core.recovery.classifier import UnknownStateClassifier
+from trading_core.contracts.recovery import UnknownStateClassifierProtocol
 
 
 @dataclass(slots=True)
@@ -21,7 +21,7 @@ class RecoveryCoordinator:
     """Coordinate startup, periodic, and on-error reconciliation requests."""
 
     source_of_truth: SourceOfTruthPolicy
-    classifier: UnknownStateClassifier
+    classifier: UnknownStateClassifierProtocol
 
     def request_startup_reconciliation(
         self,

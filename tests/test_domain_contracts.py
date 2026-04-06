@@ -124,3 +124,32 @@ def test_strategy_intent_rejects_out_of_range_confidence() -> None:
             strategy_name="test",
             context_id="ctx_123",
         )
+
+
+def test_order_intent_rejects_non_positive_quantity() -> None:
+    instrument = InstrumentRef(instrument_id="btc-usdt", symbol="BTCUSDT", venue="binance")
+
+    with pytest.raises(ValueError, match="quantity_must_be_positive"):
+        OrderIntent.create(
+            risk_decision_id="risk_1",
+            instrument=instrument,
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("0"),
+            time_in_force=TimeInForce.IOC,
+        )
+
+
+def test_order_intent_rejects_market_limit_price_leak() -> None:
+    instrument = InstrumentRef(instrument_id="btc-usdt", symbol="BTCUSDT", venue="binance")
+
+    with pytest.raises(ValueError, match="market_order_must_not_define_limit_price"):
+        OrderIntent.create(
+            risk_decision_id="risk_1",
+            instrument=instrument,
+            side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            quantity=Decimal("0.01"),
+            limit_price=Decimal("100"),
+            time_in_force=TimeInForce.IOC,
+        )

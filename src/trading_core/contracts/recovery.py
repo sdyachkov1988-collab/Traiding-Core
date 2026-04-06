@@ -35,6 +35,24 @@ class UnknownStateClassifierProtocol(Protocol):
         reason: str,
     ) -> tuple[UnknownStateRecord, SystemModeTransition]: ...
 
+    def classify_insufficient_reconciliation(
+        self,
+        *,
+        request_id: str,
+        instrument_id: str | None,
+        reason: str,
+        to_mode: object,
+    ) -> tuple[UnknownStateRecord, SystemModeTransition]: ...
+
+    def classify_conflicting_reconciliation(
+        self,
+        *,
+        request_id: str,
+        instrument_id: str | None,
+        reason: str,
+        to_mode: object,
+    ) -> tuple[UnknownStateRecord, SystemModeTransition]: ...
+
     def is_trading_allowed(self) -> bool: ...
 
     def apply_transition(self, transition: SystemModeTransition) -> None: ...

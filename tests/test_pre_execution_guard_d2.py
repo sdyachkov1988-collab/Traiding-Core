@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from trading_core.domain import (
     ExecutionAdmissibilityBasis,
     ExecutionConstraintBasis,
@@ -203,31 +205,14 @@ def test_pre_execution_guard_rejects_limit_price_not_aligned_to_price_step() -> 
 
 def test_pre_execution_guard_rejects_non_positive_limit_price_with_explicit_reason() -> None:
     order_intent = build_order_intent()
-    guard = SimplePreExecutionGuard()
-    impossible_price = type(order_intent).create(
-        risk_decision_id=order_intent.risk_decision_id,
-        instrument=order_intent.instrument,
-        side=order_intent.side,
-        order_type=order_intent.order_type,
-        quantity=order_intent.quantity,
-        time_in_force=order_intent.time_in_force,
-        limit_price=Decimal("0"),
-        metadata=order_intent.metadata,
-    )
-
-    outcome = guard.check(
-        intent=impossible_price,
-        basis=ExecutionAdmissibilityBasis(
-            instrument_id="btc-usdt",
-            quantity_step=Decimal("0.01"),
-            price_step=Decimal("0.10"),
-            min_quantity=Decimal("0.01"),
-            min_notional=Decimal("10"),
-            supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
-            supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
-            reference_price=Decimal("105.00"),
-        ),
-    )
-
-    assert outcome.verdict == GuardVerdict.REJECTED
-    assert outcome.reason == "limit_price_not_positive"
+    with pytest.raises(ValueError, match="limit_price_must_be_positive"):
+        type(order_intent).create(
+            risk_decision_id=order_intent.risk_decision_id,
+            instrument=order_intent.instrument,
+            side=order_intent.side,
+            order_type=order_intent.order_type,
+            quantity=order_intent.quantity,
+            time_in_force=order_intent.time_in_force,
+            limit_price=Decimal("0"),
+            metadata=order_intent.metadata,
+        )

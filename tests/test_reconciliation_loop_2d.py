@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from dataclasses import dataclass
+
 from trading_core.domain import (
     ReconciliationMode,
     ReconciliationOutcome,
@@ -117,6 +119,45 @@ def test_recovery_coordinator_process_outcome_with_conflict_returns_safe_mode_tr
     assert transition.to_mode == SystemMode.SAFE_MODE
 
 
+@dataclass
+class ProtocolOnlyClassifier:
+    current_mode: SystemMode = SystemMode.NORMAL
+
+    def classify_missing_execution_confirmation(self, order_intent_id: str, instrument_id: str):
+        raise NotImplementedError
+
+    def classify_unknown_position(self, instrument_id: str, reason: str):
+        raise NotImplementedError
+
+    def classify_stale_context(self, instrument_id: str):
+        raise NotImplementedError
+
+    def classify_unknown_order_state(self, order_intent_id: str, instrument_id: str, reason: str):
+        raise NotImplementedError
+
+    def classify_insufficient_reconciliation(self, *, request_id: str, instrument_id: str | None, reason: str, to_mode: object):
+        return UnknownStateClassifier(self.current_mode).classify_insufficient_reconciliation(
+            request_id=request_id,
+            instrument_id=instrument_id,
+            reason=reason,
+            to_mode=to_mode,
+        )
+
+    def classify_conflicting_reconciliation(self, *, request_id: str, instrument_id: str | None, reason: str, to_mode: object):
+        return UnknownStateClassifier(self.current_mode).classify_conflicting_reconciliation(
+            request_id=request_id,
+            instrument_id=instrument_id,
+            reason=reason,
+            to_mode=to_mode,
+        )
+
+    def is_trading_allowed(self) -> bool:
+        return self.current_mode is SystemMode.NORMAL
+
+    def apply_transition(self, transition):
+        self.current_mode = transition.to_mode
+
+
 def test_recovery_coordinator_process_outcome_with_conflict_blocks_trading() -> None:
     classifier = UnknownStateClassifier()
     coordinator = RecoveryCoordinator(
@@ -224,6 +265,27 @@ def test_recovery_coordinator_blocks_insufficient_outcome_via_read_only_path() -
     assert transition.unknown_state is not None
     assert transition.unknown_state.kind == UnknownStateKind.RECONCILIATION_INSUFFICIENT
     assert transition.unknown_state.reason == "external_basis_insufficient"
+
+
+def test_recovery_coordinator_works_against_protocol_declared_surface() -> None:
+    classifier = ProtocolOnlyClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.ON_ERROR,
+        verdict=ReconciliationVerdict.INSUFFICIENT,
+        conflicts_with_active_trading=False,
+        reason="external_basis_insufficient",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert classifier.current_mode == SystemMode.READ_ONLY
 
 
 def test_recovery_coordinator_does_not_use_request_id_as_order_intent_id_for_insufficient_outcome() -> None:

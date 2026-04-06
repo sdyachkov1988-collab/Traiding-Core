@@ -48,7 +48,7 @@ def test_json_file_state_store_round_trips_portfolio_snapshot(tmp_path: Path) ->
         metadata={"env": "paper"},
     )
 
-    saved = store.save(portfolio)
+    saved = store.save_with_fill_marker(portfolio, "fill_snapshot_1")
     loaded = store.load_latest()
 
     assert loaded is not None
@@ -351,6 +351,31 @@ def test_json_file_state_store_rejects_naive_datetime_during_deserialization(
         raise AssertionError("Expected naive persisted datetime to be rejected")
 
 
+def test_json_file_state_store_save_rejects_non_pristine_portfolio_state() -> None:
+    store = JsonFileStateStore(Path("ignored.json"))
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    position = Position.empty(instrument=instrument)
+    portfolio = PortfolioState(
+        portfolio_state_id="portfolio_1",
+        cash_balance=Decimal("950"),
+        available_cash_balance=Decimal("940"),
+        reserved_cash_balance=Decimal("10"),
+        realized_pnl=Decimal("3.2"),
+        equity=Decimal("1000.5"),
+        balances={"cash": Decimal("950"), "USDT": Decimal("950")},
+        positions={"btc-usdt": position},
+        updated_at=position.updated_at,
+        metadata={"env": "paper"},
+    )
+
+    with pytest.raises(ValueError, match="save_requires_pristine_state_or_use_save_with_fill_marker"):
+        store.save(portfolio)
+
+
 def test_json_file_state_store_round_trips_order_picture(tmp_path: Path) -> None:
     target_path = tmp_path / "state" / "latest.json"
     store = JsonFileStateStore(target_path)
@@ -365,7 +390,11 @@ def test_json_file_state_store_round_trips_order_picture(tmp_path: Path) -> None
         )
     }
 
-    snapshot = store.save(portfolio, order_picture=order_picture)
+    snapshot = store.save_with_fill_marker(
+        portfolio,
+        "fill_1",
+        order_picture=order_picture,
+    )
     loaded = store.load_latest()
 
     assert snapshot.order_picture == order_picture
