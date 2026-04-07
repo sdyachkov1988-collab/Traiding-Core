@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from trading_core.contracts.strategy import StrategyResult
-from trading_core.domain.context import MarketContext, Wave1MtfContext
+from trading_core.domain.context import MarketContext
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.strategy import NoAction, StrategyIntent
+from trading_core.domain.timeframe import TimeframeContext
 
 
 @dataclass(slots=True)
@@ -77,39 +78,40 @@ class BarDirectionStrategy:
 
 @dataclass(slots=True)
 class MtfBarAlignmentStrategy:
-    """The active Wave 1 strategy operating on the formal MTF contract only."""
+    """The active Wave 2 strategy operating on the formal timeframe context."""
 
     strategy_name: str = "mtf_bar_alignment"
     entry_timeframe: str = "15m"
     trend_timeframe: str = "1h"
     min_entry_body_ratio: Decimal = Decimal("0.001")
 
-    def evaluate(self, context: Wave1MtfContext) -> StrategyResult:
-        """Return an intent only when Wave 1 MTF input is ready and aligned."""
+    def evaluate(self, context: TimeframeContext) -> StrategyResult:
+        """Return an intent only when the formal timeframe context is admitted and aligned."""
 
-        if any(is_ready is False for is_ready in context.readiness_flags.values()):
+        required_timeframes = (self.entry_timeframe, self.trend_timeframe)
+        if any(context.readiness_flags.get(timeframe) is False for timeframe in required_timeframes):
             return NoAction.create(
                 context_id=context.context_id,
                 reason="context_not_ready",
                 strategy_name=self.strategy_name,
             )
 
-        if context.closed_bar_only is False:
+        if context.metadata.get("closed_bar_ok") == "false":
             return NoAction.create(
                 context_id=context.context_id,
                 reason="closed_bar_only_required",
                 strategy_name=self.strategy_name,
             )
 
-        if context.no_lookahead_safe is False:
+        if context.metadata.get("lookahead_violation") == "true":
             return NoAction.create(
                 context_id=context.context_id,
                 reason="lookahead_boundary_not_safe",
                 strategy_name=self.strategy_name,
             )
 
-        entry_bar = context.entry_bar
-        trend_bar = context.trend_bar
+        entry_bar = context.bars.get(self.entry_timeframe)
+        trend_bar = context.bars.get(self.trend_timeframe)
         if entry_bar is None or trend_bar is None:
             return NoAction.create(
                 context_id=context.context_id,

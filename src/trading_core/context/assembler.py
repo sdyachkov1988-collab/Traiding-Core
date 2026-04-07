@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from trading_core.context.policies import BarAlignmentPolicy, ClosedBarPolicy, FreshnessPolicy
 from trading_core.context.store import InstrumentTimeframeStore
-from trading_core.domain.common import utc_now
+from trading_core.domain.common import InstrumentRef, utc_now
 from trading_core.domain.timeframe import TimeframeContext
 
 
@@ -19,7 +19,14 @@ class TimeframeContextAssembler:
     alignment_policy: BarAlignmentPolicy
     closed_bar_policy: ClosedBarPolicy
     freshness_policy: FreshnessPolicy
+    instrument: InstrumentRef | None = None
     warmup_thresholds: dict[str, int] | None = None
+
+    def __post_init__(self) -> None:
+        if self.store.instrument_id != self.instrument_id:
+            raise ValueError("assembler_instrument_and_store_must_match")
+        if self.instrument is not None and self.instrument.instrument_id != self.instrument_id:
+            raise ValueError("assembler_instrument_ref_and_instrument_id_must_match")
 
     def assemble(self) -> TimeframeContext | None:
         """Return a valid timeframe context or None when not ready."""
@@ -68,6 +75,7 @@ class TimeframeContextAssembler:
             )
         return TimeframeContext.create(
             instrument_id=self.instrument_id,
+            instrument=self._resolve_instrument(required_bars),
             entry_timeframe=self.alignment_policy.entry_timeframe,
             timeframe_set=self.alignment_policy.required_timeframes,
             bars=required_bars,
@@ -76,4 +84,13 @@ class TimeframeContextAssembler:
             freshness_flags=freshness_flags,
             alignment_policy=self.alignment_policy.policy_name,
             metadata=metadata,
+        )
+
+    def _resolve_instrument(self, bars: dict[str, object]) -> InstrumentRef:
+        if self.instrument is not None:
+            return self.instrument
+        return InstrumentRef(
+            instrument_id=self.instrument_id,
+            symbol=self.instrument_id,
+            venue="unknown",
         )

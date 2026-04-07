@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Mapping
 
-from trading_core.domain.common import new_internal_id, require_utc_datetime, utc_now
+from trading_core.domain.common import InstrumentRef, new_internal_id, require_utc_datetime, utc_now
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +83,7 @@ class TimeframeContext:
     """Read-only MTF context assembled from the canonical timeframe store."""
 
     context_id: str
+    instrument: InstrumentRef
     instrument_id: str
     entry_timeframe: str
     timeframe_set: tuple[str, ...]
@@ -102,6 +103,7 @@ class TimeframeContext:
         cls,
         *,
         instrument_id: str,
+        instrument: InstrumentRef | None = None,
         entry_timeframe: str,
         timeframe_set: tuple[str, ...],
         bars: Mapping[str, ClosedBar],
@@ -115,6 +117,12 @@ class TimeframeContext:
 
         return cls(
             context_id=new_internal_id("ctx2"),
+            instrument=instrument
+            or InstrumentRef(
+                instrument_id=instrument_id,
+                symbol=instrument_id,
+                venue="unknown",
+            ),
             instrument_id=instrument_id,
             entry_timeframe=entry_timeframe,
             timeframe_set=timeframe_set,

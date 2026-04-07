@@ -3,15 +3,20 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from trading_core.context import InstrumentTimeframeStore
-from trading_core.domain import ClosedBar, TimeframeSyncEvent
+from trading_core.context import (
+    BarAlignmentPolicy,
+    ClosedBarPolicy,
+    FreshnessPolicy,
+    InstrumentTimeframeStore,
+    TimeframeContextAssembler,
+)
+from trading_core.domain import ClosedBar, TimeframeContext, TimeframeSyncEvent
 from trading_core.domain.common import InstrumentRef, utc_now
 from trading_core.domain import OrderSide
 from trading_core.domain.strategy import NoAction, StrategyIntent
 from trading_core.input import (
     DictEventNormalizer,
     SimpleMarketContextAssembler,
-    Wave1MtfContextAssembler,
 )
 from trading_core.strategy import BarDirectionStrategy, MtfBarAlignmentStrategy
 
@@ -117,7 +122,6 @@ def test_mtf_bar_alignment_strategy_uses_context_instrument_lineage() -> None:
     store = InstrumentTimeframeStore("btc-usdt")
     trend_bar_time = utc_now().replace(minute=0, second=0, microsecond=0)
     entry_bar_time = trend_bar_time + timedelta(minutes=15)
-    normalizer = DictEventNormalizer()
     store.update(
         TimeframeSyncEvent.create(
             instrument_id="btc-usdt",
@@ -134,30 +138,35 @@ def test_mtf_bar_alignment_strategy_uses_context_instrument_lineage() -> None:
             ),
         )
     )
-    event = normalizer.normalize(
-        {
-            "instrument_id": "btc-usdt",
-            "symbol": "BTCUSDT",
-            "venue": "binance",
-            "event_kind": "bar",
-            "source": "test-feed",
-            "payload": {
-                "timeframe": "15m",
-                "open": "105",
-                "high": "109",
-                "low": "104",
-                "close": "108",
-                "volume": "4",
-            },
-            "source_event_time": entry_bar_time,
-        }
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=ClosedBar(
+                timeframe="15m",
+                open=Decimal("105"),
+                high=Decimal("109"),
+                low=Decimal("104"),
+                close=Decimal("108"),
+                volume=Decimal("4"),
+                bar_time=entry_bar_time,
+                is_closed=True,
+            ),
+        )
     )
-    context = Wave1MtfContextAssembler(
-        instrument=instrument,
+    context = TimeframeContextAssembler(
+        instrument_id=instrument.instrument_id,
         store=store,
-        entry_timeframe="15m",
-        trend_timeframe="1h",
-    ).assemble(event)
+        instrument=instrument,
+        alignment_policy=BarAlignmentPolicy(
+            entry_timeframe="15m",
+            required_timeframes=("15m", "1h"),
+        ),
+        closed_bar_policy=ClosedBarPolicy(),
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+    ).assemble()
+
+    assert isinstance(context, TimeframeContext)
 
     result = MtfBarAlignmentStrategy().evaluate(context)
 
