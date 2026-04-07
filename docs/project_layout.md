@@ -1,12 +1,12 @@
 # Project Layout
 
-This repository is organized around seam ownership, not around exchange adapters or deployment layers. The layout reflects both the active Wave 1 working contour and the implemented next-stage seams that already exist in the codebase.
+This repository is organized around seam ownership, not around exchange adapters or deployment layers. The layout reflects both the active Wave 1 working contour and the implemented Wave 2 seams that already exist in the codebase.
 
 ## Top-level structure
 
-- `CURRENT_STATUS.md` - active / experimental / reserved repository map
+- `CURRENT_STATUS.md` - active / implemented / reserved repository map
 - `docs/spec/` - extracted source specification set
-- `docs/implementation_status.md` - implementation status after remediation and seam work
+- `docs/implementation_status.md` - implementation snapshot after critical fixes
 - `src/trading_core/domain/` - canonical domain meaning and identity
 - `src/trading_core/contracts/` - interface seams between packages
 - `src/trading_core/input/` - normalized input and early context assembly
@@ -41,7 +41,7 @@ The active Wave 1 path currently uses:
 
 This is the working acceptance contour for the current core.
 
-## Next-stage seams (experimental)
+## Implemented Wave 2 seams
 
 The following modules are implemented and test-covered, but they are not part of the Wave 1 active contour:
 
@@ -52,7 +52,7 @@ The following modules are implemented and test-covered, but they are not part of
 - `src/trading_core/positions/close_router.py`
 - `src/trading_core/domain/reconciliation_extended.py`
 
-These are experimental next-stage seams, not "missing code" and not mandatory Wave 1 behavior.
+These are implemented next-stage seams, not "missing code" and not mandatory Wave 1 behavior inside the Wave 1 active path. `ContextGate` now carries formal session/maintenance restriction handling, and the reconciliation coordinator exposes the full four-trigger Wave 2D request family.
 
 ## Reserved areas
 

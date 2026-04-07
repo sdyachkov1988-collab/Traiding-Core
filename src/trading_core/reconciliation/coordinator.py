@@ -29,8 +29,7 @@ class RecoveryCoordinator:
     ) -> ReconciliationRequest:
         """Create a startup reconciliation request."""
 
-        return ReconciliationRequest.create(
-            mode=ReconciliationMode.STARTUP,
+        return self.request_reconciliation(
             trigger=ReconciliationTrigger.SYSTEM_START,
             instrument_id=instrument_id,
         )
@@ -41,8 +40,7 @@ class RecoveryCoordinator:
     ) -> ReconciliationRequest:
         """Create a periodic reconciliation request."""
 
-        return ReconciliationRequest.create(
-            mode=ReconciliationMode.PERIODIC,
+        return self.request_reconciliation(
             trigger=ReconciliationTrigger.SCHEDULER,
             instrument_id=instrument_id,
         )
@@ -53,9 +51,34 @@ class RecoveryCoordinator:
     ) -> ReconciliationRequest:
         """Create an on-error reconciliation request."""
 
-        return ReconciliationRequest.create(
-            mode=ReconciliationMode.ON_ERROR,
+        return self.request_reconciliation(
             trigger=ReconciliationTrigger.ERROR_SIGNAL,
+            instrument_id=instrument_id,
+        )
+
+    def request_operator_reconciliation(
+        self,
+        instrument_id: str | None = None,
+    ) -> ReconciliationRequest:
+        """Create an operator-command reconciliation request."""
+
+        return self.request_reconciliation(
+            trigger=ReconciliationTrigger.OPERATOR_COMMAND,
+            instrument_id=instrument_id,
+        )
+
+    def request_reconciliation(
+        self,
+        *,
+        trigger: ReconciliationTrigger,
+        instrument_id: str | None = None,
+    ) -> ReconciliationRequest:
+        """Create a formal reconciliation request for any Wave 2D trigger path."""
+
+        mode = self._mode_for_trigger(trigger)
+        return ReconciliationRequest.create(
+            mode=mode,
+            trigger=trigger,
             instrument_id=instrument_id,
         )
 
@@ -92,3 +115,10 @@ class RecoveryCoordinator:
         )
         self.classifier.apply_transition(transition)
         return transition
+
+    def _mode_for_trigger(self, trigger: ReconciliationTrigger) -> ReconciliationMode:
+        if trigger is ReconciliationTrigger.SYSTEM_START:
+            return ReconciliationMode.STARTUP
+        if trigger is ReconciliationTrigger.SCHEDULER:
+            return ReconciliationMode.PERIODIC
+        return ReconciliationMode.ON_ERROR

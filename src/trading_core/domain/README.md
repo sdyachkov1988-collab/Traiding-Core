@@ -6,9 +6,10 @@ Purpose:
 - preserve the distinction between intent, order, execution facts, and accounting truth;
 - avoid transport-specific or adapter-specific leakage.
 
-Planned first focus:
+Current coverage:
 
 - market event primitives;
 - strategy intent primitives;
 - risk decision primitives;
-- order intent and execution fact primitives.
+- order intent and execution fact primitives;
+- portfolio, persisted-state, timeframe, gate, reconciliation, recovery, and close-routing primitives.

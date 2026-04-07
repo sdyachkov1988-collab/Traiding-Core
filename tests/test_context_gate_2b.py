@@ -243,6 +243,28 @@ def test_context_gate_rejects_lookahead_violation_from_context_metadata() -> Non
     assert outcome.reason == GateReason.LOOKAHEAD_VIOLATION
 
 
+def test_context_gate_defers_on_session_restriction() -> None:
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context(metadata={"session_restricted": "true"})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.DEFERRED
+    assert outcome.reason == GateReason.SESSION_RESTRICTED
+    assert outcome.reason_code == "session_restricted"
+
+
+def test_context_gate_rejects_on_maintenance_restriction() -> None:
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context(metadata={"maintenance_restricted": "true"})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.REJECTED
+    assert outcome.reason == GateReason.MAINTENANCE_RESTRICTED
+    assert outcome.reason_code == "maintenance_restricted"
+
+
 def test_context_gate_defers_on_explicit_data_gap_signal() -> None:
     gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
     context = make_context(metadata={"data_gap_detected": "true"})
@@ -393,6 +415,8 @@ def test_gate_reason_strenum_values_are_correct() -> None:
     assert GateReason.REQUIRED_TIMEFRAME_MISSING.value == "required_timeframe_missing"
     assert GateReason.DATA_GAP_DETECTED.value == "data_gap_detected"
     assert GateReason.LOOKAHEAD_VIOLATION.value == "lookahead_violation"
+    assert GateReason.SESSION_RESTRICTED.value == "session_restricted"
+    assert GateReason.MAINTENANCE_RESTRICTED.value == "maintenance_restricted"
 
 
 def test_admitted_context_can_flow_into_strategy_intent() -> None:

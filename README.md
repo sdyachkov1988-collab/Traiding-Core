@@ -1,6 +1,6 @@
 # Trading Core
 
-`Trading Core` is a Python 3.11+ implementation of a `Minimal Core v1` trading engine with a closed Wave 1 working contour and several implemented next-stage seams. The repository contains the remediated Wave 1 vertical slice, plus experimental prototypes for context, recovery, reconciliation loop, and close routing.
+`Trading Core` is a Python 3.11+ implementation of a `Minimal Core v1` trading engine with a closed Wave 1 working contour and implemented Wave 2 seams. The repository now includes the Wave 1 and Wave 2 critical fixes from the acceptance remediation TZ, while keeping the broader architecture and phase boundaries intact.
 
 ## Current Repository State
 
@@ -14,7 +14,15 @@ Closed Wave 1 / `Minimal Core v1` vertical slice:
 - `Package F` - fill-driven state spine
 - `Package G1/G2` - local state store and startup reconciliation
 
-Wave 1 active contour uses `Wave1MtfContextAssembler` and `MtfBarAlignmentStrategy`. Additional seams such as `ContextGate`, `RecoveryCoordinator`, and `CloseIntentRouter` are implemented as experimental next-stage prototypes. See [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md).
+Implemented next-stage seams with critical-fix coverage:
+
+- `2A` canonical timeframe store and `TimeframeContext`
+- `2B` `ContextGate` and formal admission rules for readiness, warmup, stale/gap/lookahead, session, and maintenance
+- `2C` unknown-state classifier and monotonic safety modes
+- `2D` reconciliation loop coordinator across startup, periodic, on-error, and operator-command triggers
+- `2E` position-originated close routing
+
+Wave 1 active acceptance still uses `Wave1MtfContextAssembler` and `MtfBarAlignmentStrategy`. The Wave 2 seams are implemented and tested, but they remain distinct from the canonical Wave 1 active contour. See [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md).
 
 ## Active Wave 1 Path
 
@@ -26,23 +34,22 @@ Important boundary:
 
 - Wave 1 active acceptance is `MTF-first`
 - the strategy receives `entry timeframe + mandatory HTF input` through the core
-- full `TimeframeContext` and `ContextGate` exist in the repository, but are not the mandatory canonical Wave 1 contour
+- full `TimeframeContext` and `ContextGate` exist in the repository, but they are not required for the Wave 1 acceptance contour
 
 Legacy `BarDirectionStrategy` remains in the project as reference-only behavior.
 
-## Track A / Track B / Track C Status
+## Critical Fix Baseline
 
-The repository now includes the remediation outcomes that make the core materially safer:
+The current codebase includes the critical fixes required by the remediation TZ:
 
-- risk sizing uses `reference_price` and step-aligned base quantity
-- spot `SELL` requires real position basis
-- impossible oversell is explicit conflict, not silent clipping
-- zero-quantity zombie positions are removed from portfolio truth
-- builder rechecks quantity after rounding
-- acceptance path uses an execution-to-fill seam instead of manual fill assembly
-- fill idempotency covers external identity, fallback replay, restart restore bridge, and mixed-source replay protection
-- context/data integrity includes history-depth warmup, temporal alignment, monotonic bar updates, source event time, and early readiness checks
-- canonical domain datetimes are enforced as UTC-aware
+- builder and close-builder use real step-multiple alignment rather than `quantize` shortcuts
+- startup reconciliation no longer hides shared-instrument mismatches behind zero-quantity pruning
+- position, portfolio, risk, and state seams enforce instrument coherence and reject contradictory state
+- `TimeframeContext` and `ContextGate` formally reject malformed context/config instead of admitting or crashing
+- `ContextGate` now expresses session and maintenance restrictions through formal gate reasons instead of ad hoc status
+- recovery mode transitions are monotonic and do not auto-downgrade from `SAFE_MODE` or `FROZEN`
+- reconciliation loop now exposes a unified four-trigger capability including operator-command requests
+- `data_gap_detected` has an explicit recovery path once contiguous bars resume
 
 ## Tolerance Semantics
 
@@ -55,7 +62,7 @@ This means exact `Decimal` equality by default. Any tolerant comparison must be 
 
 ## Running Tests
 
-The current suite is green: `134 passed`.
+The current suite is green: `240 passed`.
 
 ```bash
 pytest
@@ -68,11 +75,11 @@ pytest
 - domain objects are immutable dataclasses
 - local snapshots are written atomically
 - fill processing is idempotent within the current process and restart bridge
-- impossible fill/state conflicts are surfaced explicitly, not normalized away
+- impossible fill/state/context conflicts are surfaced explicitly, not normalized away
 
 ## Docs Map
 
-- [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md) - active / experimental / reserved repository map
-- [`docs/spec/index.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\spec\index.md) - source spec extraction
-- [`docs/implementation_status.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\implementation_status.md) - implementation status after remediation work
+- [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md) - active / implemented / reserved repository map
+- [`docs/spec/index.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\spec\index.md) - extracted source specification set
+- [`docs/implementation_status.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\implementation_status.md) - implementation snapshot after critical fixes
 - [`docs/project_layout.md`](C:\Users\Sergey\Desktop\Traiding Engine\docs\project_layout.md) - package and seam layout

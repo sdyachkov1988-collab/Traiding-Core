@@ -29,6 +29,8 @@ class GateReason(StrEnum):
     STALE_CONTEXT = "stale_context"
     TIMEFRAME_NOT_READY = "timeframe_not_ready"
     WARMUP_NOT_REACHED = "warmup_not_reached"
+    SESSION_RESTRICTED = "session_restricted"
+    MAINTENANCE_RESTRICTED = "maintenance_restricted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +46,12 @@ class GateOutcome:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.checked_at, "checked_at")
+
+    @property
+    def reason_code(self) -> str | None:
+        """Return a stable string reason code for formal gate outcomes."""
+
+        return None if self.reason is None else self.reason.value
 
     @classmethod
     def create(

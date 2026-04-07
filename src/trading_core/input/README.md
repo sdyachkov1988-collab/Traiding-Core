@@ -1,6 +1,6 @@
 # Input Layer
 
-This package is reserved for `Package A`.
+This package implements `Package A`.
 
 Responsibilities:
 
@@ -8,7 +8,7 @@ Responsibilities:
 - early context assembly;
 - phase-scoped minimal MTF input seam.
 
-Out of scope for now:
+Still out of scope:
 
 - full `TimeframeContext` family;
 - adapter-specific decoding logic;

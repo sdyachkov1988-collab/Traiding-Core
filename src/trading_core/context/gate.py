@@ -65,6 +65,22 @@ class ContextGate:
                 warmup_required=self.warmup_bars,
             )
 
+        if context.metadata.get("session_restricted") == "true":
+            return GateOutcome.create(
+                verdict=GateVerdict.DEFERRED,
+                reason=GateReason.SESSION_RESTRICTED,
+                bars_seen=entry_history_depth,
+                warmup_required=self.warmup_bars,
+            )
+
+        if context.metadata.get("maintenance_restricted") == "true":
+            return GateOutcome.create(
+                verdict=GateVerdict.REJECTED,
+                reason=GateReason.MAINTENANCE_RESTRICTED,
+                bars_seen=entry_history_depth,
+                warmup_required=self.warmup_bars,
+            )
+
         non_closed_timeframes = [
             timeframe
             for timeframe in required_timeframes

@@ -100,6 +100,57 @@ def test_recovery_coordinator_creates_on_error_request() -> None:
     assert request.trigger == ReconciliationTrigger.ERROR_SIGNAL
 
 
+def test_recovery_coordinator_creates_operator_command_request() -> None:
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=UnknownStateClassifier(),
+    )
+
+    request = coordinator.request_operator_reconciliation("btc-usdt")
+
+    assert request.mode == ReconciliationMode.ON_ERROR
+    assert request.trigger == ReconciliationTrigger.OPERATOR_COMMAND
+
+
+def test_recovery_coordinator_unifies_request_creation_across_all_four_triggers() -> None:
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=UnknownStateClassifier(),
+    )
+
+    requests = (
+        coordinator.request_reconciliation(
+            trigger=ReconciliationTrigger.SYSTEM_START,
+            instrument_id="btc-usdt",
+        ),
+        coordinator.request_reconciliation(
+            trigger=ReconciliationTrigger.SCHEDULER,
+            instrument_id="btc-usdt",
+        ),
+        coordinator.request_reconciliation(
+            trigger=ReconciliationTrigger.ERROR_SIGNAL,
+            instrument_id="btc-usdt",
+        ),
+        coordinator.request_reconciliation(
+            trigger=ReconciliationTrigger.OPERATOR_COMMAND,
+            instrument_id="btc-usdt",
+        ),
+    )
+
+    assert [request.trigger for request in requests] == [
+        ReconciliationTrigger.SYSTEM_START,
+        ReconciliationTrigger.SCHEDULER,
+        ReconciliationTrigger.ERROR_SIGNAL,
+        ReconciliationTrigger.OPERATOR_COMMAND,
+    ]
+    assert [request.mode for request in requests] == [
+        ReconciliationMode.STARTUP,
+        ReconciliationMode.PERIODIC,
+        ReconciliationMode.ON_ERROR,
+        ReconciliationMode.ON_ERROR,
+    ]
+
+
 def test_recovery_coordinator_process_outcome_with_conflict_returns_safe_mode_transition() -> None:
     coordinator = RecoveryCoordinator(
         source_of_truth=SourceOfTruthPolicy(),
@@ -333,6 +384,30 @@ def test_recovery_coordinator_returns_explicit_path_for_non_active_conflict() ->
     assert transition.unknown_state is not None
     assert transition.unknown_state.kind == UnknownStateKind.RECONCILIATION_CONFLICT
     assert classifier.current_mode == SystemMode.READ_ONLY
+    assert classifier.is_trading_allowed() is False
+
+
+def test_operator_command_conflict_blocks_new_actions_through_safe_mode() -> None:
+    classifier = UnknownStateClassifier()
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    request = coordinator.request_operator_reconciliation("btc-usdt")
+    outcome = ReconciliationOutcome.create(
+        request_id=request.request_id,
+        mode=request.mode,
+        verdict=ReconciliationVerdict.CONFLICTING,
+        conflicts_with_active_trading=True,
+        reason="operator_detected_position_conflict",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert transition.to_mode == SystemMode.SAFE_MODE
+    assert classifier.current_mode == SystemMode.SAFE_MODE
     assert classifier.is_trading_allowed() is False
 
 
