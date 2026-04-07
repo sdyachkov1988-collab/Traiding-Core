@@ -9,6 +9,7 @@ from trading_core.context.policies import BarAlignmentPolicy, ClosedBarPolicy, F
 from trading_core.context.store import InstrumentTimeframeStore
 from trading_core.domain import (
     GateOutcome,
+    GateReason,
     GateVerdict,
     InstrumentRef,
     OrderSide,
@@ -55,6 +56,7 @@ def make_context(
     freshness_flags: dict[str, bool] | None = None,
     bars: dict[str, ClosedBar] | None = None,
     history_depths: dict[str, int] | None = None,
+    metadata: dict[str, str] | None = None,
 ) -> TimeframeContext:
     now = utc_now().replace(second=0, microsecond=0)
     bar_map = bars or {
@@ -70,6 +72,7 @@ def make_context(
         readiness_flags=readiness_flags or {"15m": True, "1h": True},
         freshness_flags=freshness_flags or {"15m": True, "1h": True},
         alignment_policy="bar_alignment_policy",
+        metadata=metadata or {},
     )
 
 
@@ -79,7 +82,7 @@ def test_context_gate_defers_none_context() -> None:
     outcome = gate.check(None)
 
     assert outcome.verdict == GateVerdict.DEFERRED
-    assert outcome.reason == "context_not_ready"
+    assert outcome.reason == GateReason.CONTEXT_NOT_READY
 
 
 def test_context_gate_rejects_stale_context() -> None:
@@ -89,7 +92,7 @@ def test_context_gate_rejects_stale_context() -> None:
     outcome = gate.check(context)
 
     assert outcome.verdict == GateVerdict.REJECTED
-    assert outcome.reason == "stale_context"
+    assert outcome.reason == GateReason.STALE_CONTEXT
 
 
 def test_context_gate_defers_when_timeframe_not_ready() -> None:
@@ -99,7 +102,7 @@ def test_context_gate_defers_when_timeframe_not_ready() -> None:
     outcome = gate.check(context)
 
     assert outcome.verdict == GateVerdict.DEFERRED
-    assert outcome.reason == "timeframe_not_ready"
+    assert outcome.reason == GateReason.TIMEFRAME_NOT_READY
 
 
 def test_context_gate_defers_when_required_timeframe_is_missing_from_context() -> None:
@@ -117,7 +120,7 @@ def test_context_gate_defers_when_required_timeframe_is_missing_from_context() -
     outcome = gate.check(context)
 
     assert outcome.verdict == GateVerdict.DEFERRED
-    assert outcome.reason == "required_timeframe_missing"
+    assert outcome.reason == GateReason.REQUIRED_TIMEFRAME_MISSING
 
 
 def test_context_gate_defers_when_warmup_not_reached() -> None:
@@ -127,7 +130,7 @@ def test_context_gate_defers_when_warmup_not_reached() -> None:
     outcome = gate.check(context)
 
     assert outcome.verdict == GateVerdict.DEFERRED
-    assert outcome.reason == "warmup_not_reached"
+    assert outcome.reason == GateReason.WARMUP_NOT_REACHED
 
 
 def test_context_gate_admits_when_all_conditions_are_met() -> None:
@@ -168,14 +171,118 @@ def test_context_gate_uses_context_warmup_thresholds_when_higher_than_default() 
     outcome = gate.check(context)
 
     assert outcome.verdict == GateVerdict.DEFERRED
-    assert outcome.reason == "warmup_not_reached"
+    assert outcome.reason == GateReason.WARMUP_NOT_REACHED
     assert outcome.warmup_required == 4
+
+
+def test_context_gate_rejects_lookahead_violation_from_context_metadata() -> None:
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context(metadata={"lookahead_violation": "true"})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.REJECTED
+    assert outcome.reason == GateReason.LOOKAHEAD_VIOLATION
+
+
+def test_context_gate_defers_on_explicit_data_gap_signal() -> None:
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context(metadata={"data_gap_detected": "true"})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.DEFERRED
+    assert outcome.reason == GateReason.DATA_GAP_DETECTED
+
+
+def test_context_gate_assembler_keeps_missing_required_component_for_gate_reasoning() -> None:
+    store = InstrumentTimeframeStore("btc-usdt")
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m"),
+        )
+    )
+    assembler = TimeframeContextAssembler(
+        instrument_id="btc-usdt",
+        store=store,
+        alignment_policy=BarAlignmentPolicy(
+            entry_timeframe="15m",
+            required_timeframes=("15m", "1h"),
+        ),
+        closed_bar_policy=ClosedBarPolicy(),
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+    )
+    gate = ContextGate(
+        warmup_bars=2,
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+        required_timeframes=("15m", "1h"),
+    )
+
+    context = assembler.assemble()
+    outcome = gate.check(context)
+
+    assert context is not None
+    assert context.readiness_flags == {"15m": True, "1h": False}
+    assert context.metadata["required_component_unavailable"] == "true"
+    assert outcome.verdict == GateVerdict.DEFERRED
+    assert outcome.reason == GateReason.REQUIRED_TIMEFRAME_MISSING
+
+
+def test_context_gate_rejects_lookahead_violation_from_assembler_metadata() -> None:
+    store = InstrumentTimeframeStore("btc-usdt")
+    now = utc_now().replace(minute=15, second=0, microsecond=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=now),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=make_closed_bar(timeframe="1h", bar_time=now),
+        )
+    )
+    assembler = TimeframeContextAssembler(
+        instrument_id="btc-usdt",
+        store=store,
+        alignment_policy=BarAlignmentPolicy(
+            entry_timeframe="15m",
+            required_timeframes=("15m", "1h"),
+        ),
+        closed_bar_policy=ClosedBarPolicy(),
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+    )
+    gate = ContextGate(
+        warmup_bars=1,
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+        required_timeframes=("15m", "1h"),
+    )
+
+    context = assembler.assemble()
+    outcome = gate.check(context)
+
+    assert context is not None
+    assert context.metadata["lookahead_violation"] == "true"
+    assert outcome.verdict == GateVerdict.REJECTED
+    assert outcome.reason == GateReason.LOOKAHEAD_VIOLATION
 
 
 def test_gate_verdict_strenum_values_are_correct() -> None:
     assert GateVerdict.ADMITTED.value == "admitted"
     assert GateVerdict.DEFERRED.value == "deferred"
     assert GateVerdict.REJECTED.value == "rejected"
+
+
+def test_gate_reason_strenum_values_are_correct() -> None:
+    assert GateReason.CONTEXT_NOT_READY.value == "context_not_ready"
+    assert GateReason.REQUIRED_TIMEFRAME_MISSING.value == "required_timeframe_missing"
+    assert GateReason.DATA_GAP_DETECTED.value == "data_gap_detected"
+    assert GateReason.LOOKAHEAD_VIOLATION.value == "lookahead_violation"
 
 
 def test_admitted_context_can_flow_into_strategy_intent() -> None:

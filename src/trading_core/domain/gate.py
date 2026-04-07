@@ -17,13 +17,27 @@ class GateVerdict(StrEnum):
     REJECTED = "rejected"
 
 
+class GateReason(StrEnum):
+    """Explicit admission-failure taxonomy for the Wave 2B gate."""
+
+    CONTEXT_NOT_READY = "context_not_ready"
+    REQUIRED_TIMEFRAME_MISSING = "required_timeframe_missing"
+    REQUIRED_COMPONENT_UNAVAILABLE = "required_component_unavailable"
+    REQUIRED_TIMEFRAME_NOT_CLOSED = "required_timeframe_not_closed"
+    DATA_GAP_DETECTED = "data_gap_detected"
+    LOOKAHEAD_VIOLATION = "lookahead_violation"
+    STALE_CONTEXT = "stale_context"
+    TIMEFRAME_NOT_READY = "timeframe_not_ready"
+    WARMUP_NOT_REACHED = "warmup_not_reached"
+
+
 @dataclass(frozen=True, slots=True)
 class GateOutcome:
     """Formal gate outcome for the current timeframe context."""
 
     outcome_id: str
     verdict: GateVerdict
-    reason: str | None
+    reason: GateReason | None
     bars_seen: int
     warmup_required: int
     checked_at: datetime
@@ -36,7 +50,7 @@ class GateOutcome:
         cls,
         *,
         verdict: GateVerdict,
-        reason: str | None,
+        reason: GateReason | None,
         bars_seen: int,
         warmup_required: int,
     ) -> "GateOutcome":

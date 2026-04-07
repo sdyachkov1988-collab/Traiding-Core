@@ -320,7 +320,10 @@ def test_timeframe_context_assembler_returns_none_when_alignment_not_met() -> No
         freshness_policy=FreshnessPolicy(max_age_seconds=7200),
     )
 
-    assert assembler.assemble() is None
+    context = assembler.assemble()
+
+    assert context is not None
+    assert context.metadata["required_component_unavailable"] == "true"
 
 
 def test_timeframe_context_assembler_returns_context_when_ready() -> None:
@@ -403,7 +406,9 @@ def test_timeframe_sync_event_updates_store_and_enables_context_assembly() -> No
         freshness_policy=FreshnessPolicy(max_age_seconds=7200),
     )
 
-    assert assembler.assemble() is None
+    initial_context = assembler.assemble()
+
+    assert initial_context is None
 
     store.update(
         TimeframeSyncEvent.create(

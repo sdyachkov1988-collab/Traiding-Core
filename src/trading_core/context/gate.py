@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from trading_core.context.policies import FreshnessPolicy
-from trading_core.domain.gate import GateOutcome, GateVerdict
+from trading_core.domain.gate import GateOutcome, GateReason, GateVerdict
 from trading_core.domain.timeframe import TimeframeContext
 
 
@@ -23,7 +23,7 @@ class ContextGate:
         if context is None:
             return GateOutcome.create(
                 verdict=GateVerdict.DEFERRED,
-                reason="context_not_ready",
+                reason=GateReason.CONTEXT_NOT_READY,
                 bars_seen=0,
                 warmup_required=self.warmup_bars,
             )
@@ -36,7 +36,15 @@ class ContextGate:
         if missing_timeframes:
             return GateOutcome.create(
                 verdict=GateVerdict.DEFERRED,
-                reason="required_timeframe_missing",
+                reason=GateReason.REQUIRED_TIMEFRAME_MISSING,
+                bars_seen=entry_history_depth,
+                warmup_required=self.warmup_bars,
+            )
+
+        if context.metadata.get("required_component_unavailable") == "true":
+            return GateOutcome.create(
+                verdict=GateVerdict.DEFERRED,
+                reason=GateReason.REQUIRED_COMPONENT_UNAVAILABLE,
                 bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
@@ -49,7 +57,23 @@ class ContextGate:
         if non_closed_timeframes:
             return GateOutcome.create(
                 verdict=GateVerdict.REJECTED,
-                reason="required_timeframe_not_closed",
+                reason=GateReason.REQUIRED_TIMEFRAME_NOT_CLOSED,
+                bars_seen=entry_history_depth,
+                warmup_required=self.warmup_bars,
+            )
+
+        if context.metadata.get("data_gap_detected") == "true":
+            return GateOutcome.create(
+                verdict=GateVerdict.DEFERRED,
+                reason=GateReason.DATA_GAP_DETECTED,
+                bars_seen=entry_history_depth,
+                warmup_required=self.warmup_bars,
+            )
+
+        if context.metadata.get("lookahead_violation") == "true":
+            return GateOutcome.create(
+                verdict=GateVerdict.REJECTED,
+                reason=GateReason.LOOKAHEAD_VIOLATION,
                 bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
@@ -60,7 +84,7 @@ class ContextGate:
         ):
             return GateOutcome.create(
                 verdict=GateVerdict.REJECTED,
-                reason="stale_context",
+                reason=GateReason.STALE_CONTEXT,
                 bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
@@ -71,7 +95,7 @@ class ContextGate:
         ):
             return GateOutcome.create(
                 verdict=GateVerdict.DEFERRED,
-                reason="timeframe_not_ready",
+                reason=GateReason.TIMEFRAME_NOT_READY,
                 bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
@@ -90,7 +114,7 @@ class ContextGate:
         if bars_seen < warmup_required:
             return GateOutcome.create(
                 verdict=GateVerdict.DEFERRED,
-                reason="warmup_not_reached",
+                reason=GateReason.WARMUP_NOT_REACHED,
                 bars_seen=bars_seen,
                 warmup_required=warmup_required,
             )

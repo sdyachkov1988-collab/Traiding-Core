@@ -25,25 +25,25 @@ class TimeframeContextAssembler:
         """Return a valid timeframe context or None when not ready."""
 
         bars = self.store.get_bars()
+        if not bars:
+            return None
+
         now = utc_now()
         history_depths = self.store.get_history_depths()
         readiness_flags = {
             timeframe: timeframe in bars
             for timeframe in self.alignment_policy.required_timeframes
         }
-        if not all(readiness_flags.values()):
-            return None
-
         required_bars = {
             timeframe: bars[timeframe]
             for timeframe in self.alignment_policy.required_timeframes
+            if timeframe in bars
         }
-        for bar in required_bars.values():
-            if not self.closed_bar_policy.is_valid_closed_bar(bar):
-                return None
-
-        if not self.alignment_policy.is_aligned(required_bars):
-            return None
+        closed_bar_ok = all(
+            self.closed_bar_policy.is_valid_closed_bar(bar)
+            for bar in required_bars.values()
+        )
+        alignment_ok = all(readiness_flags.values()) and self.alignment_policy.is_aligned(required_bars)
 
         freshness_flags = {
             timeframe: self.freshness_policy.is_fresh(bar, now)
@@ -51,7 +51,13 @@ class TimeframeContextAssembler:
         }
         metadata = {
             "required_timeframes": ",".join(self.alignment_policy.required_timeframes),
+            "alignment_ok": "true" if alignment_ok else "false",
+            "closed_bar_ok": "true" if closed_bar_ok else "false",
         }
+        if not all(readiness_flags.values()):
+            metadata["required_component_unavailable"] = "true"
+        if all(readiness_flags.values()) and not alignment_ok:
+            metadata["lookahead_violation"] = "true"
         if self.warmup_thresholds:
             metadata["warmup_thresholds"] = ",".join(
                 f"{timeframe}:{bars_required}"
