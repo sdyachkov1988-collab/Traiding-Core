@@ -24,6 +24,12 @@ class Position:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.updated_at, "updated_at")
+        if self.quantity < Decimal("0"):
+            raise ValueError("position_quantity_must_be_non_negative")
+        if self.quantity == Decimal("0") and self.average_entry_price != Decimal("0"):
+            raise ValueError("flat_position_must_not_have_cost_basis")
+        if self.quantity > Decimal("0") and self.average_entry_price <= Decimal("0"):
+            raise ValueError("open_position_must_have_positive_average_entry_price")
 
     @classmethod
     def empty(
@@ -60,6 +66,20 @@ class PortfolioState:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.updated_at, "updated_at")
+        if self.available_cash_balance < Decimal("0"):
+            raise ValueError("available_cash_balance_must_be_non_negative")
+        if self.reserved_cash_balance < Decimal("0"):
+            raise ValueError("reserved_cash_balance_must_be_non_negative")
+        if self.balances.get("cash") != self.cash_balance:
+            raise ValueError("cash_balance_must_match_cash_ledger")
+        if self.cash_balance >= Decimal("0"):
+            if self.available_cash_balance + self.reserved_cash_balance != self.cash_balance:
+                raise ValueError("cash_balances_must_reconcile")
+        elif self.available_cash_balance != Decimal("0") or self.reserved_cash_balance != Decimal("0"):
+            raise ValueError("negative_cash_balance_cannot_have_available_or_reserved_components")
+        for instrument_id, position in self.positions.items():
+            if instrument_id != position.instrument.instrument_id:
+                raise ValueError("position_key_must_match_position_instrument_id")
 
     @classmethod
     def empty(

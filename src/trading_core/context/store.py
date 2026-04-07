@@ -37,6 +37,11 @@ class InstrumentTimeframeStore:
             and event.bar.bar_time > existing_bar.bar_time + timeframe_duration(event.timeframe)
         ):
             self._gap_flags[event.timeframe] = True
+        elif (
+            existing_bar is not None
+            and event.bar.bar_time == existing_bar.bar_time + timeframe_duration(event.timeframe)
+        ):
+            self._gap_flags[event.timeframe] = False
 
         self._bars[event.timeframe] = event.bar
         if existing_bar is None:

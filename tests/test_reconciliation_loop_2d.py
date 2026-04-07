@@ -358,6 +358,28 @@ def test_source_of_truth_policy_operationally_controls_conflict_mode() -> None:
     assert classifier.current_mode == SystemMode.SAFE_MODE
 
 
+def test_recovery_coordinator_does_not_downgrade_existing_safe_mode_on_weaker_outcome() -> None:
+    classifier = UnknownStateClassifier(current_mode=SystemMode.SAFE_MODE)
+    coordinator = RecoveryCoordinator(
+        source_of_truth=SourceOfTruthPolicy(),
+        classifier=classifier,
+    )
+    outcome = ReconciliationOutcome.create(
+        request_id="recon_req_123",
+        mode=ReconciliationMode.ON_ERROR,
+        verdict=ReconciliationVerdict.INSUFFICIENT,
+        conflicts_with_active_trading=False,
+        reason="external_basis_insufficient",
+        instrument_id="btc-usdt",
+    )
+
+    transition = coordinator.process_outcome(outcome)
+
+    assert transition is not None
+    assert transition.to_mode == SystemMode.READ_ONLY
+    assert classifier.current_mode == SystemMode.SAFE_MODE
+
+
 def test_source_of_truth_policy_blocks_trading_on_position_conflict() -> None:
     policy = SourceOfTruthPolicy()
 

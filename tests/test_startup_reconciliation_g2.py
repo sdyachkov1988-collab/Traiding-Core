@@ -178,3 +178,63 @@ def test_startup_reconciler_can_return_corrected_for_zero_quantity_local_positio
 
     assert result.verdict == StartupReconciliationVerdict.CORRECTED
     assert result.reason == "zero_quantity_positions_pruned"
+
+
+def test_startup_reconciler_does_not_hide_shared_instrument_mismatch_after_zero_quantity_prune() -> None:
+    btc = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    eth = InstrumentRef(
+        instrument_id="eth-usdt",
+        symbol="ETHUSDT",
+        venue="binance",
+    )
+    base = Position.empty(instrument=btc)
+    btc_position = Position(
+        position_id=base.position_id,
+        instrument=btc,
+        quantity=Decimal("0.50"),
+        average_entry_price=Decimal("101"),
+        realized_pnl=Decimal("0"),
+        updated_at=base.updated_at,
+        metadata={},
+    )
+    zero_eth = Position(
+        position_id="pos_eth",
+        instrument=eth,
+        quantity=Decimal("0"),
+        average_entry_price=Decimal("0"),
+        realized_pnl=Decimal("0"),
+        updated_at=base.updated_at,
+        metadata={},
+    )
+    snapshot = PersistedStateSnapshot.create(
+        portfolio_state=PortfolioState(
+            portfolio_state_id="portfolio_4",
+            cash_balance=Decimal("1000"),
+            available_cash_balance=Decimal("1000"),
+            reserved_cash_balance=Decimal("0"),
+            realized_pnl=Decimal("0"),
+            equity=Decimal("1000"),
+            balances={"cash": Decimal("1000")},
+            positions={"btc-usdt": btc_position, "eth-usdt": zero_eth},
+            updated_at=base.updated_at,
+            metadata={},
+        )
+    )
+    external = ExternalStartupBasis.create(
+        cash_balance=Decimal("1000"),
+        positions={
+            "btc-usdt": ExternalStartupPosition(
+                instrument_id="btc-usdt",
+                quantity=Decimal("0.60"),
+            )
+        },
+    )
+
+    result = SimpleStartupReconciler().reconcile(snapshot, external)
+
+    assert result.verdict == StartupReconciliationVerdict.CANNOT_RECONCILE
+    assert result.reason == "position_quantity_mismatch"

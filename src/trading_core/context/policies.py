@@ -59,6 +59,10 @@ class BarAlignmentPolicy:
     def is_aligned(self, bars: Mapping[str, ClosedBar]) -> bool:
         """Return True when required bars exist and higher-timeframe parents align."""
 
+        if not self.required_timeframes:
+            return False
+        if self.entry_timeframe not in self.required_timeframes:
+            return False
         if not all(timeframe in bars for timeframe in self.required_timeframes):
             return False
 

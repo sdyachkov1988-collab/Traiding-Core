@@ -19,6 +19,10 @@ class SpotPortfolioEngine:
         """Return the next portfolio state after a fill."""
 
         prev_position = current.positions.get(fill.instrument.instrument_id)
+        if position.instrument.instrument_id != fill.instrument.instrument_id:
+            raise ValueError("resulting_position_instrument_does_not_match_fill")
+        if prev_position is not None and prev_position.instrument.instrument_id != fill.instrument.instrument_id:
+            raise ValueError("previous_position_instrument_does_not_match_fill")
         conflict_flags: list[str] = []
 
         if fill.side is OrderSide.BUY:
@@ -39,8 +43,8 @@ class SpotPortfolioEngine:
 
         previous_realized = prev_position.realized_pnl if prev_position is not None else Decimal("0")
         next_realized_pnl = current.realized_pnl - previous_realized + position.realized_pnl
-        next_available_cash = min(next_cash_balance, Decimal("0")) if next_cash_balance < Decimal("0") else next_cash_balance
-        next_reserved_cash = max(Decimal("0"), next_cash_balance - next_available_cash)
+        next_available_cash = next_cash_balance if next_cash_balance > Decimal("0") else Decimal("0")
+        next_reserved_cash = Decimal("0")
         next_balances = dict(current.balances)
         next_balances["cash"] = next_cash_balance
         position_cost_basis = sum(

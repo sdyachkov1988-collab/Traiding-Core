@@ -160,6 +160,15 @@ def test_instrument_timeframe_store_rejects_timeframe_payload_mismatch() -> None
         )
 
 
+def test_timeframe_sync_event_create_rejects_timeframe_payload_mismatch() -> None:
+    with pytest.raises(ValueError, match="timeframe_event_and_bar_timeframe_must_match"):
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="1h"),
+        )
+
+
 def test_instrument_timeframe_store_rejects_closed_bar_slot_overwrite() -> None:
     store = InstrumentTimeframeStore("btc-usdt")
     bar_time = utc_now().replace(minute=15, second=0, microsecond=0)
@@ -299,6 +308,12 @@ def test_bar_alignment_policy_raises_for_unsupported_timeframe() -> None:
 
     with pytest.raises(ValueError, match="unsupported timeframe format: 1M"):
         policy.is_aligned(bars)
+
+
+def test_bar_alignment_policy_returns_false_when_entry_timeframe_is_not_required() -> None:
+    policy = BarAlignmentPolicy(entry_timeframe="15m", required_timeframes=("1h",))
+
+    assert policy.is_aligned({"1h": make_closed_bar(timeframe="1h")}) is False
 
 
 def test_timeframe_context_assembler_returns_none_when_alignment_not_met() -> None:
@@ -513,6 +528,99 @@ def test_timeframe_context_assembler_marks_data_gap_detected_from_store_continui
     assert context is not None
     assert store.get_gap_flags()["15m"] is True
     assert context.metadata["data_gap_detected"] == "true"
+
+
+def test_timeframe_store_clears_gap_flag_after_contiguous_recovery_bar() -> None:
+    store = InstrumentTimeframeStore("btc-usdt")
+    start = utc_now().replace(minute=0, second=0, microsecond=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=start),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=start + timedelta(minutes=30)),
+        )
+    )
+    assert store.get_gap_flags()["15m"] is True
+
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=start + timedelta(minutes=45)),
+        )
+    )
+
+    assert store.get_gap_flags()["15m"] is False
+
+
+def test_timeframe_context_rejects_instrument_mismatch() -> None:
+    with pytest.raises(ValueError, match="timeframe_context_instrument_must_match_instrument_id"):
+        TimeframeContext.create(
+            instrument_id="btc-usdt",
+            instrument=InstrumentRef(instrument_id="eth-usdt", symbol="ETHUSDT", venue="binance"),
+            entry_timeframe="15m",
+            timeframe_set=("15m",),
+            bars={"15m": make_closed_bar(timeframe="15m")},
+            history_depths={"15m": 1},
+            readiness_flags={"15m": True},
+            freshness_flags={"15m": True},
+            alignment_policy="bar_alignment_policy",
+        )
+
+
+def test_timeframe_context_rejects_bars_keys_that_do_not_match_timeframe_set() -> None:
+    with pytest.raises(ValueError, match="bars_must_be_subset_of_timeframe_set"):
+        TimeframeContext.create(
+            instrument_id="btc-usdt",
+            entry_timeframe="15m",
+            timeframe_set=("15m",),
+            bars={
+                "15m": make_closed_bar(timeframe="15m"),
+                "1h": make_closed_bar(timeframe="1h"),
+            },
+            history_depths={"15m": 1, "1h": 1},
+            readiness_flags={"15m": True, "1h": True},
+            freshness_flags={"15m": True, "1h": True},
+            alignment_policy="bar_alignment_policy",
+        )
+
+
+def test_timeframe_context_rejects_entry_timeframe_outside_timeframe_set() -> None:
+    with pytest.raises(ValueError, match="entry_timeframe_must_belong_to_timeframe_set"):
+        TimeframeContext.create(
+            instrument_id="btc-usdt",
+            entry_timeframe="15m",
+            timeframe_set=("1h",),
+            bars={"1h": make_closed_bar(timeframe="1h")},
+            history_depths={"1h": 1},
+            readiness_flags={"1h": True},
+            freshness_flags={"1h": True},
+            alignment_policy="bar_alignment_policy",
+        )
+
+
+def test_timeframe_context_rejects_missing_flags_and_depths() -> None:
+    with pytest.raises(ValueError, match="readiness_flags_must_match_timeframe_set"):
+        TimeframeContext.create(
+            instrument_id="btc-usdt",
+            entry_timeframe="15m",
+            timeframe_set=("15m", "1h"),
+            bars={
+                "15m": make_closed_bar(timeframe="15m"),
+                "1h": make_closed_bar(timeframe="1h"),
+            },
+            history_depths={"15m": 1, "1h": 1},
+            readiness_flags={"15m": True},
+            freshness_flags={"15m": True, "1h": True},
+            alignment_policy="bar_alignment_policy",
+        )
 
 
 def test_wave1_mtf_context_marks_correct_parent_bar_as_no_lookahead_safe() -> None:

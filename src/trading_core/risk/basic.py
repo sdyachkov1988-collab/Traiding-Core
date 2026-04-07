@@ -30,6 +30,15 @@ class ConfidenceCapRiskEvaluator:
     ) -> RiskDecision:
         """Return a separate risk verdict without mutating downstream state."""
 
+        if intent.instrument.instrument_id != instrument_basis.instrument_id:
+            return RiskDecision.create(
+                verdict=RiskVerdict.REJECTED,
+                strategy_intent_id=intent.intent_id,
+                instrument=intent.instrument,
+                side=intent.side,
+                rejection_reason="instrument_basis_mismatch",
+                metadata={"instrument_id": instrument_basis.instrument_id},
+            )
         if not instrument_basis.instrument_tradable:
             return RiskDecision.create(
                 verdict=RiskVerdict.REJECTED,

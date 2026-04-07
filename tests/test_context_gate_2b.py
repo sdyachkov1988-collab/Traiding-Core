@@ -123,6 +123,28 @@ def test_context_gate_defers_when_required_timeframe_is_missing_from_context() -
     assert outcome.reason == GateReason.REQUIRED_TIMEFRAME_MISSING
 
 
+def test_context_gate_does_not_admit_context_missing_readiness_flags() -> None:
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context()
+    object.__setattr__(context, "readiness_flags", {"15m": True})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict != GateVerdict.ADMITTED
+    assert outcome.reason == GateReason.REQUIRED_COMPONENT_UNAVAILABLE
+
+
+def test_context_gate_does_not_admit_context_missing_freshness_flags() -> None:
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context()
+    object.__setattr__(context, "freshness_flags", {"15m": True})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict != GateVerdict.ADMITTED
+    assert outcome.reason == GateReason.REQUIRED_COMPONENT_UNAVAILABLE
+
+
 def test_context_gate_defers_when_warmup_not_reached() -> None:
     gate = ContextGate(warmup_bars=3, freshness_policy=FreshnessPolicy(max_age_seconds=300))
     context = make_context(history_depths={"15m": 2, "1h": 1})
@@ -173,6 +195,42 @@ def test_context_gate_uses_context_warmup_thresholds_when_higher_than_default() 
     assert outcome.verdict == GateVerdict.DEFERRED
     assert outcome.reason == GateReason.WARMUP_NOT_REACHED
     assert outcome.warmup_required == 4
+
+
+def test_context_gate_rejects_malformed_warmup_threshold_metadata() -> None:
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context(history_depths={"15m": 3, "1h": 3}, metadata={"warmup_thresholds": "15m:not-a-number"})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.REJECTED
+    assert outcome.reason == GateReason.REQUIRED_COMPONENT_UNAVAILABLE
+
+
+def test_context_gate_rejects_empty_required_timeframes_config() -> None:
+    gate = ContextGate(
+        warmup_bars=2,
+        freshness_policy=FreshnessPolicy(max_age_seconds=300),
+        required_timeframes=(),
+    )
+
+    outcome = gate.check(make_context())
+
+    assert outcome.verdict == GateVerdict.REJECTED
+    assert outcome.reason == GateReason.REQUIRED_COMPONENT_UNAVAILABLE
+
+
+def test_context_gate_rejects_entry_timeframe_outside_required_timeframes() -> None:
+    gate = ContextGate(
+        warmup_bars=2,
+        freshness_policy=FreshnessPolicy(max_age_seconds=300),
+        required_timeframes=("1h",),
+    )
+
+    outcome = gate.check(make_context())
+
+    assert outcome.verdict == GateVerdict.REJECTED
+    assert outcome.reason == GateReason.REQUIRED_COMPONENT_UNAVAILABLE
 
 
 def test_context_gate_rejects_lookahead_violation_from_context_metadata() -> None:

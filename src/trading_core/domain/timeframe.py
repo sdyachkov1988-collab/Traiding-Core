@@ -57,6 +57,8 @@ class TimeframeSyncEvent:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.received_at, "received_at")
+        if self.timeframe != self.bar.timeframe:
+            raise ValueError("timeframe_event_and_bar_timeframe_must_match")
 
     @classmethod
     def create(
@@ -97,6 +99,23 @@ class TimeframeContext:
 
     def __post_init__(self) -> None:
         require_utc_datetime(self.created_at, "created_at")
+        if self.instrument.instrument_id != self.instrument_id:
+            raise ValueError("timeframe_context_instrument_must_match_instrument_id")
+        if not self.timeframe_set:
+            raise ValueError("timeframe_set_must_not_be_empty")
+        if self.entry_timeframe not in self.timeframe_set:
+            raise ValueError("entry_timeframe_must_belong_to_timeframe_set")
+        if not set(self.bars).issubset(set(self.timeframe_set)):
+            raise ValueError("bars_must_be_subset_of_timeframe_set")
+        if set(self.readiness_flags) != set(self.timeframe_set):
+            raise ValueError("readiness_flags_must_match_timeframe_set")
+        if set(self.freshness_flags) != set(self.timeframe_set):
+            raise ValueError("freshness_flags_must_match_timeframe_set")
+        if set(self.history_depths) != set(self.timeframe_set):
+            raise ValueError("history_depths_must_match_timeframe_set")
+        for timeframe, bar in self.bars.items():
+            if timeframe != bar.timeframe:
+                raise ValueError("bars_must_be_keyed_by_matching_timeframe")
 
     @classmethod
     def create(

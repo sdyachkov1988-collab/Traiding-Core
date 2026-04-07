@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal
 
 from trading_core.domain.close_intent import CloseIntent
 from trading_core.domain.instruments import ExecutionConstraintBasis, InstrumentExecutionSpec
@@ -33,9 +33,9 @@ class SimpleOrderIntentBuilder:
         order_type = self._choose_order_type(instrument_spec)
         time_in_force = self._choose_time_in_force(instrument_spec)
         side = decision.side
-        quantity = decision.approved_quantity.quantize(
+        quantity = self._align_down_to_step(
+            decision.approved_quantity,
             instrument_spec.quantity_step,
-            rounding=ROUND_DOWN,
         )
         if quantity < instrument_spec.min_order_quantity:
             raise ValueError("Rounded quantity fell below instrument minimum quantity")
@@ -67,11 +67,13 @@ class SimpleOrderIntentBuilder:
     ) -> OrderIntent:
         """Build an order intent for a position-originated close route without fake strategy/risk lineage."""
 
+        if close_intent.instrument.instrument_id != instrument_spec.instrument_id:
+            raise ValueError("Instrument spec does not match CloseIntent instrument")
         order_type = self._choose_order_type(instrument_spec)
         time_in_force = self._choose_time_in_force(instrument_spec)
-        quantity = close_intent.quantity.quantize(
+        quantity = self._align_down_to_step(
+            close_intent.quantity,
             instrument_spec.quantity_step,
-            rounding=ROUND_DOWN,
         )
         if quantity < instrument_spec.min_order_quantity:
             raise ValueError("Rounded quantity fell below instrument minimum quantity")
@@ -127,10 +129,17 @@ class SimpleOrderIntentBuilder:
         """
 
         signed_offset = offset if side is OrderSide.BUY else -offset
-        limit_price = (reference_price + signed_offset).quantize(
+        limit_price = self._align_down_to_step(
+            reference_price + signed_offset,
             price_step,
-            rounding=ROUND_DOWN,
         )
         if limit_price <= Decimal("0"):
             raise ValueError("Limit price must be positive")
         return limit_price
+
+    def _align_down_to_step(
+        self,
+        value: Decimal,
+        step: Decimal,
+    ) -> Decimal:
+        return (value // step) * step

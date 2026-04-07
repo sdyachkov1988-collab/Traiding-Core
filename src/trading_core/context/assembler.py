@@ -36,7 +36,10 @@ class TimeframeContextAssembler:
             return None
 
         now = utc_now()
-        history_depths = self.store.get_history_depths()
+        history_depths = {
+            timeframe: self.store.get_history_depth(timeframe)
+            for timeframe in self.alignment_policy.required_timeframes
+        }
         gap_flags = self.store.get_gap_flags()
         readiness_flags = {
             timeframe: timeframe in bars
@@ -54,8 +57,12 @@ class TimeframeContextAssembler:
         alignment_ok = all(readiness_flags.values()) and self.alignment_policy.is_aligned(required_bars)
 
         freshness_flags = {
-            timeframe: self.freshness_policy.is_fresh(bar, now)
-            for timeframe, bar in required_bars.items()
+            timeframe: (
+                self.freshness_policy.is_fresh(required_bars[timeframe], now)
+                if timeframe in required_bars
+                else False
+            )
+            for timeframe in self.alignment_policy.required_timeframes
         }
         metadata = {
             "required_timeframes": ",".join(self.alignment_policy.required_timeframes),

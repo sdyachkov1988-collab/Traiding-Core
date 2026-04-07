@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from trading_core.domain import Fill, OrderSide, PortfolioState
+from trading_core.domain import Fill, OrderSide, PortfolioState, Position
 from trading_core.domain.common import InstrumentRef, utc_now
 from trading_core.execution import IdempotentFillProcessor
 from trading_core.portfolio import SpotPortfolioEngine
@@ -196,6 +196,32 @@ def test_position_engine_rejects_impossible_oversell_fill() -> None:
         position_engine.apply(position, fill_processor.accept(sell_fill))
 
 
+def test_position_engine_rejects_fill_from_other_instrument_without_mutating_state() -> None:
+    fill_processor = IdempotentFillProcessor()
+    position_engine = SpotPositionEngine()
+    btc_fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+    )
+    position = position_engine.apply(None, fill_processor.accept(btc_fill))
+    foreign_fill = Fill.create(
+        order_intent_id="ordint_2",
+        instrument=InstrumentRef(instrument_id="eth-usdt", symbol="ETHUSDT", venue="binance"),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.05"),
+        price=Decimal("200"),
+    )
+
+    with pytest.raises(ValueError, match="fill_instrument_does_not_match_current_position"):
+        position_engine.apply(position, fill_processor.accept(foreign_fill))
+
+    assert position.instrument.instrument_id == "btc-usdt"
+    assert position.quantity == Decimal("0.10")
+
+
 def test_portfolio_engine_marks_impossible_oversell_fill_for_reconcile() -> None:
     fill_processor = IdempotentFillProcessor()
     position_engine = SpotPositionEngine()
@@ -317,6 +343,86 @@ def test_portfolio_engine_aggregates_realized_pnl_across_instruments() -> None:
     portfolio = portfolio_engine.apply(portfolio, eth_sell, eth_pos)
 
     assert portfolio.realized_pnl == Decimal("15")
+
+
+def test_portfolio_engine_rejects_resulting_position_instrument_mismatch() -> None:
+    portfolio_engine = SpotPortfolioEngine()
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+    fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+    )
+    wrong_position = Position(
+        position_id="pos_eth",
+        instrument=InstrumentRef(instrument_id="eth-usdt", symbol="ETHUSDT", venue="binance"),
+        quantity=Decimal("0.10"),
+        average_entry_price=Decimal("100"),
+        realized_pnl=Decimal("0"),
+        updated_at=portfolio.updated_at,
+        metadata={},
+    )
+
+    with pytest.raises(ValueError, match="resulting_position_instrument_does_not_match_fill"):
+        portfolio_engine.apply(portfolio, fill, wrong_position)
+
+
+def test_portfolio_engine_rejects_previous_position_instrument_mismatch() -> None:
+    portfolio_engine = SpotPortfolioEngine()
+    btc = instrument()
+    valid_previous = Position(
+        position_id="pos_corrupt",
+        instrument=btc,
+        quantity=Decimal("0.10"),
+        average_entry_price=Decimal("100"),
+        realized_pnl=Decimal("0"),
+        updated_at=utc_now(),
+        metadata={},
+    )
+    portfolio = PortfolioState(
+        portfolio_state_id="portfolio_corrupt",
+        cash_balance=Decimal("1000"),
+        available_cash_balance=Decimal("1000"),
+        reserved_cash_balance=Decimal("0"),
+        realized_pnl=Decimal("0"),
+        equity=Decimal("1000"),
+        balances={"cash": Decimal("1000")},
+        positions={"btc-usdt": valid_previous},
+        updated_at=valid_previous.updated_at,
+        metadata={"reconcile_required": "true"},
+    )
+    object.__setattr__(
+        portfolio,
+        "positions",
+        {
+            "btc-usdt": Position(
+                position_id="pos_corrupt",
+                instrument=InstrumentRef(
+                    instrument_id="eth-usdt",
+                    symbol="ETHUSDT",
+                    venue="binance",
+                ),
+                quantity=Decimal("0.10"),
+                average_entry_price=Decimal("100"),
+                realized_pnl=Decimal("0"),
+                updated_at=valid_previous.updated_at,
+                metadata={},
+            )
+        },
+    )
+    fill = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=btc,
+        side=OrderSide.SELL,
+        quantity=Decimal("0.01"),
+        price=Decimal("100"),
+    )
+    next_position = Position.empty(instrument=btc)
+
+    with pytest.raises(ValueError, match="previous_position_instrument_does_not_match_fill"):
+        portfolio_engine.apply(portfolio, fill, next_position)
 
 
 def test_portfolio_state_id_changes_on_each_apply() -> None:

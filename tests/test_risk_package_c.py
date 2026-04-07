@@ -142,6 +142,29 @@ def test_confidence_cap_risk_evaluator_rejects_non_tradable_instrument() -> None
     assert decision.rejection_reason == "instrument_not_tradable"
 
 
+def test_confidence_cap_risk_evaluator_rejects_instrument_basis_mismatch() -> None:
+    intent = build_intent()
+    evaluator = ConfidenceCapRiskEvaluator()
+
+    decision = evaluator.evaluate(
+        intent=intent,
+        instrument_basis=InstrumentRiskBasis(
+            instrument_id="eth-usdt",
+            min_order_quantity=Decimal("0.01"),
+            max_order_quantity=Decimal("10"),
+            quantity_step=Decimal("0.01"),
+        ),
+        portfolio_basis=PortfolioRiskBasis(
+            available_capital=Decimal("500.00"),
+            max_capital_per_trade=Decimal("250.00"),
+            reference_price=Decimal("105.00"),
+        ),
+    )
+
+    assert decision.verdict == RiskVerdict.REJECTED
+    assert decision.rejection_reason == "instrument_basis_mismatch"
+
+
 def test_confidence_cap_risk_evaluator_sizes_in_base_units_using_reference_price() -> None:
     intent = build_intent()
     evaluator = ConfidenceCapRiskEvaluator(min_confidence=Decimal("0.01"))

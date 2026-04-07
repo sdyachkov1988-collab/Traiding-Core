@@ -408,3 +408,33 @@ def test_close_intent_rejects_naive_created_at_datetime() -> None:
         assert str(exc) == "created_at must be timezone-aware UTC"
     else:
         raise AssertionError("Expected naive created_at to be rejected")
+
+
+def test_close_route_rejects_mismatched_instrument_spec_before_handoff() -> None:
+    execution_coordinator = RecordingExecutionAdapter()
+    router, classifier = router_with_classifier(execution_coordinator)
+    close_intent = CloseIntent.create(
+        instrument=instrument(),
+        position_id="pos_123",
+        quantity=Decimal("0.10"),
+        reason="protective_close",
+    )
+
+    result = router.route(
+        close_intent=close_intent,
+        current_position_quantity=Decimal("0.10"),
+        instrument_spec=InstrumentExecutionSpec(
+            instrument_id="eth-usdt",
+            quantity_step=Decimal("0.001"),
+            price_step=Decimal("0.10"),
+            supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
+            supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
+        ),
+        execution_basis=execution_basis(),
+        admissibility_basis=admissibility_basis(),
+    )
+
+    assert result.verdict == CloseRoutingVerdict.REJECTED
+    assert result.reason == "Instrument spec does not match CloseIntent instrument"
+    assert execution_coordinator.submitted_order_ids == []
+    assert classifier.current_mode == SystemMode.NORMAL

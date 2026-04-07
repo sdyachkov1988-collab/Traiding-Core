@@ -5,7 +5,9 @@ from decimal import Decimal
 import pytest
 
 from trading_core.domain import (
+    CloseIntent,
     ExecutionConstraintBasis,
+    InstrumentRef,
     InstrumentExecutionSpec,
     InstrumentRiskBasis,
     OrderSide,
@@ -214,5 +216,110 @@ def test_order_builder_rejects_non_positive_limit_price() -> None:
             execution_basis=ExecutionConstraintBasis(
                 reference_price=Decimal("0.05"),
                 preferred_limit_offset=Decimal("0.10"),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("approved_quantity", "quantity_step", "expected_quantity"),
+    [
+        (Decimal("0.29"), Decimal("0.05"), Decimal("0.25")),
+        (Decimal("0.49"), Decimal("0.25"), Decimal("0.25")),
+    ],
+)
+def test_order_builder_aligns_quantity_by_true_step_multiple(
+    approved_quantity: Decimal,
+    quantity_step: Decimal,
+    expected_quantity: Decimal,
+) -> None:
+    decision = build_approved_decision()
+    builder = SimpleOrderIntentBuilder()
+    aligned = type(decision).create(
+        verdict=RiskVerdict.APPROVED,
+        strategy_intent_id=decision.strategy_intent_id,
+        instrument=decision.instrument,
+        side=decision.side,
+        approved_quantity=approved_quantity,
+    )
+
+    order_intent = builder.build(
+        decision=aligned,
+        instrument_spec=InstrumentExecutionSpec(
+            instrument_id="btc-usdt",
+            quantity_step=quantity_step,
+            price_step=Decimal("0.10"),
+            min_order_quantity=Decimal("0.01"),
+            supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
+            supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
+        ),
+        execution_basis=ExecutionConstraintBasis(
+            reference_price=Decimal("105.00"),
+            preferred_limit_offset=Decimal("0.20"),
+        ),
+    )
+
+    assert order_intent.quantity == expected_quantity
+
+
+@pytest.mark.parametrize(
+    ("price_step", "expected_price"),
+    [
+        (Decimal("0.05"), Decimal("105.20")),
+        (Decimal("0.125"), Decimal("105.125")),
+    ],
+)
+def test_order_builder_aligns_limit_price_by_true_step_multiple(
+    price_step: Decimal,
+    expected_price: Decimal,
+) -> None:
+    decision = build_approved_decision()
+    builder = SimpleOrderIntentBuilder()
+
+    order_intent = builder.build(
+        decision=decision,
+        instrument_spec=InstrumentExecutionSpec(
+            instrument_id="btc-usdt",
+            quantity_step=Decimal("0.01"),
+            price_step=price_step,
+            min_order_quantity=Decimal("0.01"),
+            supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
+            supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
+        ),
+        execution_basis=ExecutionConstraintBasis(
+            reference_price=Decimal("105.00"),
+            preferred_limit_offset=Decimal("0.20"),
+        ),
+    )
+
+    assert order_intent.limit_price == expected_price
+
+
+def test_close_order_builder_validates_instrument_match() -> None:
+    builder = SimpleOrderIntentBuilder()
+    close_intent = CloseIntent.create(
+        instrument=InstrumentRef(
+            instrument_id="btc-usdt",
+            symbol="BTCUSDT",
+            venue="binance",
+        ),
+        position_id="pos_1",
+        quantity=Decimal("0.25"),
+        reason="protective_close",
+    )
+
+    with pytest.raises(ValueError, match="Instrument spec does not match CloseIntent instrument"):
+        builder.build_close_order(
+            close_intent=close_intent,
+            instrument_spec=InstrumentExecutionSpec(
+                instrument_id="eth-usdt",
+                quantity_step=Decimal("0.05"),
+                price_step=Decimal("0.125"),
+                min_order_quantity=Decimal("0.05"),
+                supported_order_types=(OrderType.LIMIT, OrderType.MARKET),
+                supported_time_in_force=(TimeInForce.GTC, TimeInForce.IOC),
+            ),
+            execution_basis=ExecutionConstraintBasis(
+                reference_price=Decimal("105.00"),
+                preferred_limit_offset=Decimal("0.20"),
             ),
         )

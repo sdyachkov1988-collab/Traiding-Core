@@ -31,6 +31,7 @@ class JsonFileStateStore:
     ) -> PersistedStateSnapshot:
         """Persist the portfolio snapshot as the locally owned state view."""
 
+        self._validate_portfolio_state(portfolio_state)
         if not self._is_pristine_snapshot_candidate(portfolio_state, order_picture):
             raise ValueError("save_requires_pristine_state_or_use_save_with_fill_marker")
 
@@ -54,6 +55,7 @@ class JsonFileStateStore:
     ) -> PersistedStateSnapshot:
         """Persist the portfolio snapshot and processed fill marker atomically."""
 
+        self._validate_portfolio_state(portfolio_state)
         snapshot = PersistedStateSnapshot.create(
             portfolio_state=portfolio_state,
             order_picture=order_picture,
@@ -219,6 +221,7 @@ class JsonFileStateStore:
             updated_at=self._parse_utc_datetime(str(raw_portfolio["updated_at"]), "portfolio_state.updated_at"),
             metadata=dict(raw_portfolio["metadata"]),
         )
+        self._validate_portfolio_state(portfolio_state)
         raw_checkpoint = payload.get("fill_dedup_checkpoint")
         return PersistedStateSnapshot(
             snapshot_id=str(payload["snapshot_id"]),
@@ -304,3 +307,7 @@ class JsonFileStateStore:
         if parsed.utcoffset() != timezone.utc.utcoffset(parsed):
             raise TypeError(f"{field_name} must be UTC")
         return parsed
+
+    def _validate_portfolio_state(self, portfolio_state: PortfolioState) -> None:
+        if portfolio_state.cash_balance < Decimal("0") and portfolio_state.metadata.get("reconcile_required") != "true":
+            raise ValueError("negative_cash_balance_requires_reconcile_flag")

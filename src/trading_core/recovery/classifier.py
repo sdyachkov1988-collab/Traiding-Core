@@ -12,6 +12,16 @@ from trading_core.domain.unknown import (
 )
 
 
+def _mode_rank(mode: SystemMode) -> int:
+    if mode is SystemMode.NORMAL:
+        return 0
+    if mode is SystemMode.READ_ONLY:
+        return 1
+    if mode is SystemMode.SAFE_MODE:
+        return 2
+    return 3
+
+
 @dataclass(slots=True)
 class UnknownStateClassifier:
     """Classify unknown states and map them into formal system modes."""
@@ -156,4 +166,6 @@ class UnknownStateClassifier:
     def apply_transition(self, transition: SystemModeTransition) -> None:
         """Apply a mode transition produced by the classifier."""
 
+        if _mode_rank(transition.to_mode) < _mode_rank(self.current_mode):
+            return
         self.current_mode = transition.to_mode

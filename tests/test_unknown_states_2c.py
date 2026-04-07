@@ -176,6 +176,32 @@ def test_frozen_mode_is_not_decorative_and_blocks_trading() -> None:
     assert classifier.is_trading_allowed() is False
 
 
+def test_apply_transition_does_not_downgrade_safe_mode_to_read_only() -> None:
+    classifier = UnknownStateClassifier(current_mode=SystemMode.SAFE_MODE)
+    transition = SystemModeTransition.create(
+        from_mode=SystemMode.SAFE_MODE,
+        to_mode=SystemMode.READ_ONLY,
+        reason="weaker_follow_up_event",
+    )
+
+    classifier.apply_transition(transition)
+
+    assert classifier.current_mode == SystemMode.SAFE_MODE
+
+
+def test_apply_transition_does_not_downgrade_frozen_mode_to_safe_mode() -> None:
+    classifier = UnknownStateClassifier(current_mode=SystemMode.FROZEN)
+    transition = SystemModeTransition.create(
+        from_mode=SystemMode.FROZEN,
+        to_mode=SystemMode.SAFE_MODE,
+        reason="weaker_follow_up_event",
+    )
+
+    classifier.apply_transition(transition)
+
+    assert classifier.current_mode == SystemMode.FROZEN
+
+
 def test_system_mode_and_unknown_state_kind_values_are_correct() -> None:
     assert SystemMode.NORMAL.value == "normal"
     assert SystemMode.READ_ONLY.value == "read_only"

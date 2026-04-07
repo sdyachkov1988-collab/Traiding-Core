@@ -400,3 +400,100 @@ def test_json_file_state_store_round_trips_order_picture(tmp_path: Path) -> None
     assert snapshot.order_picture == order_picture
     assert loaded is not None
     assert loaded.order_picture == order_picture
+
+
+def test_portfolio_state_rejects_position_key_instrument_mismatch() -> None:
+    position = Position(
+        position_id="pos_1",
+        instrument=InstrumentRef(
+            instrument_id="eth-usdt",
+            symbol="ETHUSDT",
+            venue="binance",
+        ),
+        quantity=Decimal("0.10"),
+        average_entry_price=Decimal("100"),
+        realized_pnl=Decimal("0"),
+        updated_at=PortfolioState.empty(cash_balance=Decimal("1000")).updated_at,
+        metadata={},
+    )
+
+    with pytest.raises(ValueError, match="position_key_must_match_position_instrument_id"):
+        PortfolioState(
+            portfolio_state_id="portfolio_bad",
+            cash_balance=Decimal("1000"),
+            available_cash_balance=Decimal("1000"),
+            reserved_cash_balance=Decimal("0"),
+            realized_pnl=Decimal("0"),
+            equity=Decimal("1000"),
+            balances={"cash": Decimal("1000")},
+            positions={"btc-usdt": position},
+            updated_at=position.updated_at,
+            metadata={},
+        )
+
+
+def test_json_file_state_store_rejects_invalid_state_save() -> None:
+    store = JsonFileStateStore(Path("ignored.json"))
+    invalid = PortfolioState(
+        portfolio_state_id="portfolio_bad",
+        cash_balance=Decimal("-1"),
+        available_cash_balance=Decimal("0"),
+        reserved_cash_balance=Decimal("0"),
+        realized_pnl=Decimal("0"),
+        equity=Decimal("-1"),
+        balances={"cash": Decimal("-1")},
+        positions={},
+        updated_at=PortfolioState.empty(cash_balance=Decimal("1000")).updated_at,
+        metadata={},
+    )
+
+    with pytest.raises(ValueError, match="negative_cash_balance_requires_reconcile_flag"):
+        store.save_with_fill_marker(invalid, "fill_1")
+
+
+def test_json_file_state_store_rejects_corrupted_snapshot_load(tmp_path: Path) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(
+        json.dumps(
+            {
+                "snapshot_id": "snapshot_1",
+                "saved_at": "2026-01-01T12:00:00+00:00",
+                "last_processed_fill_id": None,
+                "order_picture": {},
+                "fill_dedup_checkpoint": None,
+                "metadata": {"storage_format": "json"},
+                "portfolio_state": {
+                    "portfolio_state_id": "portfolio_1",
+                    "cash_balance": "1000",
+                    "available_cash_balance": "1000",
+                    "reserved_cash_balance": "0",
+                    "realized_pnl": "0",
+                    "equity": "1000",
+                    "balances": {"cash": "1000"},
+                    "updated_at": "2026-01-01T12:00:00+00:00",
+                    "metadata": {},
+                    "positions": {
+                        "btc-usdt": {
+                            "position_id": "pos_1",
+                            "instrument": {
+                                "instrument_id": "eth-usdt",
+                                "symbol": "ETHUSDT",
+                                "venue": "binance",
+                                "market_type": "spot",
+                            },
+                            "quantity": "0.10",
+                            "average_entry_price": "100",
+                            "realized_pnl": "0",
+                            "updated_at": "2026-01-01T12:00:00+00:00",
+                            "metadata": {},
+                        }
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="position_key_must_match_position_instrument_id"):
+        JsonFileStateStore(target_path).load_latest()

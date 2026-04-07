@@ -28,7 +28,23 @@ class ContextGate:
                 warmup_required=self.warmup_bars,
             )
 
-        required_timeframes = self.required_timeframes or context.timeframe_set
+        required_timeframes = (
+            context.timeframe_set if self.required_timeframes is None else self.required_timeframes
+        )
+        if not required_timeframes:
+            return GateOutcome.create(
+                verdict=GateVerdict.REJECTED,
+                reason=GateReason.REQUIRED_COMPONENT_UNAVAILABLE,
+                bars_seen=0,
+                warmup_required=self.warmup_bars,
+            )
+        if context.entry_timeframe not in required_timeframes:
+            return GateOutcome.create(
+                verdict=GateVerdict.REJECTED,
+                reason=GateReason.REQUIRED_COMPONENT_UNAVAILABLE,
+                bars_seen=0,
+                warmup_required=self.warmup_bars,
+            )
         entry_history_depth = context.history_depths.get(context.entry_timeframe, 0)
         missing_timeframes = [
             timeframe for timeframe in required_timeframes if timeframe not in context.bars
@@ -79,23 +95,33 @@ class ContextGate:
             )
 
         if any(
-            context.freshness_flags.get(timeframe) is False
+            timeframe not in context.freshness_flags
+            or context.freshness_flags[timeframe] is False
             for timeframe in required_timeframes
         ):
             return GateOutcome.create(
                 verdict=GateVerdict.REJECTED,
-                reason=GateReason.STALE_CONTEXT,
+                reason=(
+                    GateReason.REQUIRED_COMPONENT_UNAVAILABLE
+                    if any(timeframe not in context.freshness_flags for timeframe in required_timeframes)
+                    else GateReason.STALE_CONTEXT
+                ),
                 bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
 
         if any(
-            context.readiness_flags.get(timeframe) is False
+            timeframe not in context.readiness_flags
+            or context.readiness_flags[timeframe] is False
             for timeframe in required_timeframes
         ):
             return GateOutcome.create(
                 verdict=GateVerdict.DEFERRED,
-                reason=GateReason.TIMEFRAME_NOT_READY,
+                reason=(
+                    GateReason.REQUIRED_COMPONENT_UNAVAILABLE
+                    if any(timeframe not in context.readiness_flags for timeframe in required_timeframes)
+                    else GateReason.TIMEFRAME_NOT_READY
+                ),
                 bars_seen=entry_history_depth,
                 warmup_required=self.warmup_bars,
             )
@@ -105,11 +131,19 @@ class ContextGate:
             for timeframe in required_timeframes
         )
         warmup_values = [self.warmup_bars]
-        warmup_values.extend(
-            int(threshold.split(":")[1])
-            for threshold in context.metadata.get("warmup_thresholds", "").split(",")
-            if threshold
-        )
+        try:
+            warmup_values.extend(
+                int(threshold.split(":")[1])
+                for threshold in context.metadata.get("warmup_thresholds", "").split(",")
+                if threshold and ":" in threshold and threshold.split(":")[1]
+            )
+        except (TypeError, ValueError, IndexError):
+            return GateOutcome.create(
+                verdict=GateVerdict.REJECTED,
+                reason=GateReason.REQUIRED_COMPONENT_UNAVAILABLE,
+                bars_seen=entry_history_depth,
+                warmup_required=self.warmup_bars,
+            )
         warmup_required = max(warmup_values)
         if bars_seen < warmup_required:
             return GateOutcome.create(

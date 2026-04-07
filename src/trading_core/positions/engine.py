@@ -43,6 +43,8 @@ class SpotPositionEngine:
         """Return the next position truth after a fill."""
 
         position = current or Position.empty(instrument=fill.instrument)
+        if position.instrument.instrument_id != fill.instrument.instrument_id:
+            raise ValueError("fill_instrument_does_not_match_current_position")
         if fill.side is OrderSide.BUY:
             new_quantity = position.quantity + fill.quantity
             if new_quantity <= Decimal("0"):

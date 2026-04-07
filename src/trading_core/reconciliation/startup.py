@@ -47,15 +47,31 @@ class SimpleStartupReconciler:
         external_instruments = set(external_basis.positions)
         if local_instruments != external_instruments:
             extra_local_instruments = local_instruments - external_instruments
+            remaining_local_positions = local_portfolio.positions
             if extra_local_instruments and all(
                 local_portfolio.positions[instrument_id].quantity == Decimal("0")
                 for instrument_id in extra_local_instruments
             ):
-                return StartupReconciliationResult.create(
-                    verdict=StartupReconciliationVerdict.CORRECTED,
-                    reason="zero_quantity_positions_pruned",
-                    metadata={"instrument_ids": ",".join(sorted(extra_local_instruments))},
-                )
+                remaining_local_positions = {
+                    instrument_id: position
+                    for instrument_id, position in local_portfolio.positions.items()
+                    if instrument_id not in extra_local_instruments
+                }
+                if set(remaining_local_positions) == external_instruments:
+                    for instrument_id, local_position in remaining_local_positions.items():
+                        external_position = external_basis.positions[instrument_id]
+                        quantity_delta = abs(local_position.quantity - external_position.quantity)
+                        if quantity_delta > self.quantity_tolerance:
+                            return StartupReconciliationResult.create(
+                                verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
+                                reason="position_quantity_mismatch",
+                                metadata={"instrument_id": instrument_id},
+                            )
+                    return StartupReconciliationResult.create(
+                        verdict=StartupReconciliationVerdict.CORRECTED,
+                        reason="zero_quantity_positions_pruned",
+                        metadata={"instrument_ids": ",".join(sorted(extra_local_instruments))},
+                    )
             if not local_instruments and not external_instruments:
                 return StartupReconciliationResult.create(
                     verdict=StartupReconciliationVerdict.CORRECTED,
