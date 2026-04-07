@@ -64,11 +64,11 @@ class CloseIntentRouter:
             basis=admissibility_basis,
         )
         if guard_outcome.verdict is not GuardVerdict.PASSED:
-            return CloseRoutingResult.create(
-                close_intent_id=close_intent.intent_id,
+            return self._trigger_safe_mode_path(
+                close_intent=close_intent,
                 verdict=CloseRoutingVerdict.GUARD_REJECTED,
-                order_intent_id=order_intent.order_intent_id,
                 reason=guard_outcome.reason or "close_routing_guard_rejected",
+                order_intent_id=order_intent.order_intent_id,
             )
 
         admitted_order = AdmittedOrder.create(
@@ -81,11 +81,9 @@ class CloseIntentRouter:
         )
         reports = self.execution_coordinator.submit(admitted_order)
         if any(report.kind is ExecutionReportKind.REJECTED for report in reports):
-            return CloseRoutingResult.create(
-                close_intent_id=close_intent.intent_id,
+            return self._trigger_safe_mode_path(
+                close_intent=close_intent,
                 verdict=CloseRoutingVerdict.EXECUTION_REJECTED,
-                order_intent_id=order_intent.order_intent_id,
-                admitted_order_id=admitted_order.admitted_order_id,
                 reason=next(
                     (
                         report.reason
@@ -95,6 +93,8 @@ class CloseIntentRouter:
                     ),
                     "close_execution_rejected",
                 ),
+                order_intent_id=order_intent.order_intent_id,
+                admitted_order_id=admitted_order.admitted_order_id,
             )
         if not any(
             report.kind in (ExecutionReportKind.ACCEPTED, ExecutionReportKind.ACKNOWLEDGED)
@@ -111,6 +111,30 @@ class CloseIntentRouter:
             verdict=CloseRoutingVerdict.ADMITTED,
             order_intent_id=order_intent.order_intent_id,
             admitted_order_id=admitted_order.admitted_order_id,
+        )
+
+    def _trigger_safe_mode_path(
+        self,
+        *,
+        close_intent: CloseIntent,
+        verdict: CloseRoutingVerdict,
+        reason: str,
+        order_intent_id: str | None = None,
+        admitted_order_id: str | None = None,
+    ) -> CloseRoutingResult:
+        """Escalate failed protective close attempts into an explicit safe-mode posture."""
+
+        _, transition = self.classifier.classify_unknown_position(
+            instrument_id=close_intent.instrument.instrument_id,
+            reason=reason,
+        )
+        self.classifier.apply_transition(transition)
+        return CloseRoutingResult.create(
+            close_intent_id=close_intent.intent_id,
+            verdict=verdict,
+            order_intent_id=order_intent_id,
+            admitted_order_id=admitted_order_id,
+            reason=reason,
         )
 
     def _trigger_reconcile_path(

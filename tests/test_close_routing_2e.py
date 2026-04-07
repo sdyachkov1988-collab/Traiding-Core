@@ -242,7 +242,8 @@ def test_invalid_close_quantity_triggers_safe_mode_path() -> None:
 
     assert result.verdict == CloseRoutingVerdict.GUARD_REJECTED
     assert result.reason == "quantity_rounding_invalid"
-    assert classifier.current_mode == SystemMode.NORMAL
+    assert classifier.current_mode == SystemMode.SAFE_MODE
+    assert classifier.is_trading_allowed() is False
 
 
 def test_guard_reject_never_results_in_silent_failure() -> None:
@@ -305,8 +306,8 @@ def test_guard_reject_remains_guard_level_outcome() -> None:
     )
 
     assert result.verdict == CloseRoutingVerdict.GUARD_REJECTED
-    assert classifier.is_trading_allowed() is True
-    assert classifier.current_mode == SystemMode.NORMAL
+    assert classifier.is_trading_allowed() is False
+    assert classifier.current_mode == SystemMode.SAFE_MODE
 
 
 def test_close_intent_router_matches_protocol() -> None:
@@ -366,7 +367,8 @@ def test_execution_reject_on_close_route_remains_execution_level_outcome() -> No
 
     assert result.verdict == CloseRoutingVerdict.EXECUTION_REJECTED
     assert result.reason == "adapter_rejected_submission"
-    assert classifier.current_mode == SystemMode.NORMAL
+    assert classifier.current_mode == SystemMode.SAFE_MODE
+    assert classifier.is_trading_allowed() is False
 
 
 def test_missing_execution_confirmation_on_close_route_triggers_explicit_reconcile_path() -> None:
