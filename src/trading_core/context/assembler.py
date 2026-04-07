@@ -30,6 +30,7 @@ class TimeframeContextAssembler:
 
         now = utc_now()
         history_depths = self.store.get_history_depths()
+        gap_flags = self.store.get_gap_flags()
         readiness_flags = {
             timeframe: timeframe in bars
             for timeframe in self.alignment_policy.required_timeframes
@@ -58,6 +59,8 @@ class TimeframeContextAssembler:
             metadata["required_component_unavailable"] = "true"
         if all(readiness_flags.values()) and not alignment_ok:
             metadata["lookahead_violation"] = "true"
+        if any(gap_flags.get(timeframe, False) for timeframe in self.alignment_policy.required_timeframes):
+            metadata["data_gap_detected"] = "true"
         if self.warmup_thresholds:
             metadata["warmup_thresholds"] = ",".join(
                 f"{timeframe}:{bars_required}"

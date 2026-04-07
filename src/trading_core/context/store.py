@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
+from trading_core.context.policies import timeframe_duration
 from trading_core.domain.timeframe import ClosedBar, TimeframeSyncEvent
 
 
@@ -14,6 +15,7 @@ class InstrumentTimeframeStore:
         self.instrument_id = instrument_id
         self._bars: dict[str, ClosedBar] = {}
         self._history_depths: dict[str, int] = {}
+        self._gap_flags: dict[str, bool] = {}
 
     def update(self, event: TimeframeSyncEvent) -> None:
         """Update the stored closed bar for the event timeframe."""
@@ -30,15 +32,23 @@ class InstrumentTimeframeStore:
                 raise ValueError("closed_bar_slot_overwrite_not_allowed")
             return
 
+        if (
+            existing_bar is not None
+            and event.bar.bar_time > existing_bar.bar_time + timeframe_duration(event.timeframe)
+        ):
+            self._gap_flags[event.timeframe] = True
+
         self._bars[event.timeframe] = event.bar
         if existing_bar is None:
             self._history_depths[event.timeframe] = 1
+            self._gap_flags.setdefault(event.timeframe, False)
         elif event.bar.bar_time > existing_bar.bar_time:
             self._history_depths[event.timeframe] = (
                 self._history_depths.get(event.timeframe, 1) + 1
             )
         else:
             self._history_depths.setdefault(event.timeframe, 1)
+            self._gap_flags.setdefault(event.timeframe, False)
 
     def get_bars(self) -> Mapping[str, ClosedBar]:
         """Return the current timeframe-bar mapping."""
@@ -54,6 +64,11 @@ class InstrumentTimeframeStore:
         """Return accepted history depth per timeframe."""
 
         return dict(self._history_depths)
+
+    def get_gap_flags(self) -> Mapping[str, bool]:
+        """Return whether a representable continuity gap was observed per timeframe."""
+
+        return dict(self._gap_flags)
 
     def get_bar(self, timeframe: str) -> ClosedBar | None:
         """Return the latest closed bar for a timeframe, if present."""

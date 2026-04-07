@@ -122,6 +122,7 @@ def test_instrument_timeframe_store_updates_and_returns_latest_bar() -> None:
     assert store.get_bar("15m") == bar
     assert store.get_bars()["15m"] == bar
     assert store.get_history_depth("15m") == 1
+    assert store.get_gap_flags()["15m"] is False
 
 
 def test_instrument_timeframe_store_rejects_non_monotonic_bar_updates() -> None:
@@ -470,6 +471,48 @@ def test_timeframe_context_assembler_carries_history_depth_from_store() -> None:
 
     assert context is not None
     assert context.history_depths["15m"] == 2
+
+
+def test_timeframe_context_assembler_marks_data_gap_detected_from_store_continuity_break() -> None:
+    store = InstrumentTimeframeStore("btc-usdt")
+    now = utc_now().replace(second=0, microsecond=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=now.replace(minute=0)),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=now.replace(minute=30)),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=make_closed_bar(timeframe="1h", bar_time=now.replace(minute=0)),
+        )
+    )
+    assembler = TimeframeContextAssembler(
+        instrument_id="btc-usdt",
+        store=store,
+        alignment_policy=BarAlignmentPolicy(
+            entry_timeframe="15m",
+            required_timeframes=("15m", "1h"),
+        ),
+        closed_bar_policy=ClosedBarPolicy(),
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+    )
+
+    context = assembler.assemble()
+
+    assert context is not None
+    assert store.get_gap_flags()["15m"] is True
+    assert context.metadata["data_gap_detected"] == "true"
 
 
 def test_wave1_mtf_context_marks_correct_parent_bar_as_no_lookahead_safe() -> None:

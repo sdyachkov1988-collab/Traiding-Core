@@ -195,6 +195,58 @@ def test_context_gate_defers_on_explicit_data_gap_signal() -> None:
     assert outcome.reason == GateReason.DATA_GAP_DETECTED
 
 
+def test_context_gate_defers_on_data_gap_from_assembled_context() -> None:
+    store = InstrumentTimeframeStore("btc-usdt")
+    now = utc_now().replace(second=0, microsecond=0)
+    first_entry_bar_time = now - timedelta(minutes=45)
+    second_entry_bar_time = now - timedelta(minutes=15)
+    hourly_bar_time = second_entry_bar_time.replace(minute=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=first_entry_bar_time),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="15m",
+            bar=make_closed_bar(timeframe="15m", bar_time=second_entry_bar_time),
+        )
+    )
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=make_closed_bar(timeframe="1h", bar_time=hourly_bar_time),
+        )
+    )
+    assembler = TimeframeContextAssembler(
+        instrument_id="btc-usdt",
+        store=store,
+        alignment_policy=BarAlignmentPolicy(
+            entry_timeframe="15m",
+            required_timeframes=("15m", "1h"),
+        ),
+        closed_bar_policy=ClosedBarPolicy(),
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+    )
+    gate = ContextGate(
+        warmup_bars=1,
+        freshness_policy=FreshnessPolicy(max_age_seconds=7200),
+        required_timeframes=("15m", "1h"),
+    )
+
+    context = assembler.assemble()
+    outcome = gate.check(context)
+
+    assert context is not None
+    assert context.metadata["data_gap_detected"] == "true"
+    assert outcome.verdict == GateVerdict.DEFERRED
+    assert outcome.reason == GateReason.DATA_GAP_DETECTED
+
+
 def test_context_gate_assembler_keeps_missing_required_component_for_gate_reasoning() -> None:
     store = InstrumentTimeframeStore("btc-usdt")
     store.update(
