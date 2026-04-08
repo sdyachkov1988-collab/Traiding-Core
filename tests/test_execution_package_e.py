@@ -131,14 +131,15 @@ def test_mock_execution_adapter_can_return_rejected_report_sequence() -> None:
     assert reports[-1].reason == "adapter_rejected_submission"
 
 
-def test_mock_execution_adapter_materializes_limit_fill_from_order_limit_price() -> None:
+def test_execution_handoff_materializes_limit_fill_from_order_limit_price() -> None:
     adapter = MockExecutionAdapter(accept_orders=True)
+    handoff = ExecutionHandoff(adapter=adapter)
     admitted_order = build_admitted_order()
     accepted_report = next(
         report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.ACCEPTED
     )
 
-    fill = adapter.materialize_fill(admitted_order, accepted_report, fee=Decimal("0.25"))
+    fill = handoff.materialize_fill(admitted_order, accepted_report, fee=Decimal("0.25"))
 
     assert fill.price == admitted_order.order_intent.limit_price
     assert fill.external_fill_id != accepted_report.external_order_id
@@ -147,8 +148,9 @@ def test_mock_execution_adapter_materializes_limit_fill_from_order_limit_price()
     assert fill.metadata["execution_report_id"] == accepted_report.report_id
 
 
-def test_mock_execution_adapter_materializes_market_fill_from_explicit_execution_price() -> None:
+def test_execution_handoff_materializes_market_fill_from_explicit_execution_price() -> None:
     adapter = MockExecutionAdapter(accept_orders=True)
+    handoff = ExecutionHandoff(adapter=adapter)
     market_order = OrderIntent.create(
         risk_decision_id="risk_1",
         instrument=InstrumentRef(
@@ -175,7 +177,7 @@ def test_mock_execution_adapter_materializes_market_fill_from_explicit_execution
         report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.ACCEPTED
     )
 
-    fill = adapter.materialize_fill(
+    fill = handoff.materialize_fill(
         admitted_order,
         accepted_report,
         execution_price=Decimal("104.75"),
@@ -187,23 +189,25 @@ def test_mock_execution_adapter_materializes_market_fill_from_explicit_execution
     assert fill.metadata["execution_price_source"] == "explicit_execution_price"
 
 
-def test_mock_execution_adapter_materialize_fill_rejects_invalid_report_kind() -> None:
+def test_execution_handoff_rejects_invalid_report_kind() -> None:
     adapter = MockExecutionAdapter(accept_orders=True)
+    handoff = ExecutionHandoff(adapter=adapter)
     admitted_order = build_admitted_order()
     submitted_report = next(
         report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.SUBMITTED
     )
 
     try:
-        adapter.materialize_fill(admitted_order, submitted_report)
+        handoff.materialize_fill(admitted_order, submitted_report)
     except ValueError as exc:
         assert str(exc) == "Fill materialization requires an accepted or acknowledged report"
     else:
         raise AssertionError("Expected invalid report kind to be rejected")
 
 
-def test_mock_execution_adapter_materialize_fill_rejects_mismatched_report() -> None:
+def test_execution_handoff_rejects_mismatched_report() -> None:
     adapter = MockExecutionAdapter(accept_orders=True)
+    handoff = ExecutionHandoff(adapter=adapter)
     admitted_order = build_admitted_order()
     mismatched_report = ExecutionReport.create(
         kind=ExecutionReportKind.ACCEPTED,
@@ -212,24 +216,26 @@ def test_mock_execution_adapter_materialize_fill_rejects_mismatched_report() -> 
     )
 
     try:
-        adapter.materialize_fill(admitted_order, mismatched_report)
+        handoff.materialize_fill(admitted_order, mismatched_report)
     except ValueError as exc:
         assert str(exc) == "ExecutionReport does not match AdmittedOrder"
     else:
         raise AssertionError("Expected mismatched report to be rejected")
 
 
-def test_mock_execution_adapter_can_model_partial_incremental_execution() -> None:
-    adapter = MockExecutionAdapter(
-        accept_orders=True,
-        partial_fill_plan=(Decimal("0.04"), Decimal("0.07")),
-    )
+def test_execution_handoff_can_model_partial_incremental_execution() -> None:
+    adapter = MockExecutionAdapter(accept_orders=True)
+    handoff = ExecutionHandoff(adapter=adapter)
     admitted_order = build_admitted_order()
     accepted_report = next(
         report for report in adapter.submit(admitted_order) if report.kind is ExecutionReportKind.ACCEPTED
     )
 
-    fills = adapter.materialize_fills(admitted_order, accepted_report)
+    fills = handoff.materialize_fills(
+        admitted_order,
+        accepted_report,
+        quantities=(Decimal("0.04"), Decimal("0.07")),
+    )
 
     assert len(fills) == 2
     assert fills[0].quantity == Decimal("0.04")

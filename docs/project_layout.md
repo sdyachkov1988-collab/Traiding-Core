@@ -1,6 +1,6 @@
 # Project Layout
 
-This repository is organized around seam ownership, not around exchange adapters or deployment layers. The layout reflects both the active Wave 1 working contour and the implemented Wave 2 seams that already exist in the codebase.
+This repository is organized around seam ownership, not around exchange adapters or deployment layers. The layout reflects both the dedicated `Wave 1G` acceptance contour and the implemented next-stage seams that already exist in the codebase.
 
 ## Top-level structure
 
@@ -22,9 +22,26 @@ This repository is organized around seam ownership, not around exchange adapters
 - `src/trading_core/governance/` - reserved governance/policy seam
 - `tests/` - package, regression, and acceptance coverage
 
-## Active runtime contour
+## Acceptance and runtime contours
 
-The active runtime/acceptance path currently uses:
+`Wave 1G` acceptance currently uses:
+
+- `src/trading_core/input/`
+  with `DictEventNormalizer` and `Wave1MtfContextAssembler`
+- `src/trading_core/strategy/`
+  with `MtfBarAlignmentStrategy` over the phase-scoped `Wave1MtfContext`
+- `src/trading_core/risk/`
+  with `ConfidenceCapRiskEvaluator`
+- `src/trading_core/execution/`
+  for builder, guard, adapter, and core-owned `ExecutionHandoff`
+- `src/trading_core/positions/engine.py`
+- `src/trading_core/portfolio/engine.py`
+- `src/trading_core/state/`
+- `src/trading_core/reconciliation/startup.py`
+
+This is the truthful `Wave 1G` acceptance contour for `Minimal Core v1`.
+
+Implemented next-stage runtime currently uses:
 
 - `src/trading_core/context/`
   with `TimeframeContextAssembler`, `ContextGate`, and their supporting policies
@@ -39,13 +56,13 @@ The active runtime/acceptance path currently uses:
 - `src/trading_core/state/`
 - `src/trading_core/reconciliation/startup.py`
 
-This is the working acceptance contour for the current core.
+This is the truthful next-stage runtime contour already present in the repository.
 
 Naming split:
 
-- `Wave1MtfContextAssembler` remains in the repository as earlier / legacy phase naming
-- active runtime/tests use `TimeframeContext + ContextGate`
-- the status docs distinguish the actual runtime path from older naming so the repo map does not contradict the tests
+- `Wave1MtfContextAssembler` remains in the repository as the phase-scoped Wave 1 acceptance seam
+- `TimeframeContext + ContextGate` are part of the implemented next-stage runtime seam family
+- the status docs distinguish these two contours so `Wave 1G` no longer mislabels the next stage
 
 ## Implemented Wave 2 seams
 

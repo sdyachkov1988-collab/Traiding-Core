@@ -1,6 +1,6 @@
 # Trading Core
 
-`Trading Core` is a Python 3.11+ implementation of a `Minimal Core v1` trading engine with a closed Wave 1 working contour and implemented Wave 2 seams. The repository now includes the Wave 1 and Wave 2 critical fixes from the acceptance remediation TZ, while keeping the broader architecture and phase boundaries intact.
+`Trading Core` is a Python 3.11+ implementation of a `Minimal Core v1` trading engine with a closed Wave 1 working contour and implemented Wave 2 seams. The repository includes the Wave 1 and Wave 2 critical fixes from the acceptance remediation TZ while keeping the broader architecture and phase boundaries intact.
 
 ## Current Repository State
 
@@ -22,19 +22,26 @@ Implemented next-stage seams with critical-fix coverage:
 - `2D` reconciliation loop coordinator across startup, periodic, on-error, and operator-command triggers
 - `2E` position-originated close routing
 
-The current runtime/tests use formal `TimeframeContext + ContextGate` ahead of `MtfBarAlignmentStrategy`. Earlier `Wave1MtfContext` naming is still present in the repo as legacy phase wording, but it is not the primary acceptance/runtime path anymore. See [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md).
+The repository now keeps two honest slices side by side:
 
-## Active Runtime Path
+- `Wave 1G` acceptance uses the phase-scoped `Wave1MtfContext` seam and is exercised by [`tests/test_acceptance_wave1g_minimal_core.py`](C:\Users\Sergey\Desktop\Traiding Engine\tests\test_acceptance_wave1g_minimal_core.py)
+- the implemented next-stage runtime slice uses formal `TimeframeContext + ContextGate` and is exercised by [`tests/test_next_stage_runtime_acceptance.py`](C:\Users\Sergey\Desktop\Traiding Engine\tests\test_next_stage_runtime_acceptance.py)
 
-The current working path is:
+## Acceptance And Runtime Paths
+
+`Wave 1G` / `Minimal Core v1` acceptance path:
+
+`MarketEvent -> Wave1MtfContext -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+
+Implemented next-stage runtime slice:
 
 `TimeframeSyncEvent -> TimeframeContext -> ContextGate -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
 
 Important boundary:
 
-- Wave 1 active acceptance remains `MTF-first`
-- the strategy receives `entry timeframe + mandatory HTF input` through the formal context seam used in runtime/tests
-- `Wave1MtfContext` remains in the codebase as early/legacy naming, not as the primary runtime contour label
+- `Wave 1G` acceptance stays on Wave 1 seams and the minimal MTF input seam
+- `TimeframeContext + ContextGate` remain in the repo as implemented next-stage runtime seams
+- `Wave1MtfContext` is now explicit legacy/phase naming for the Wave 1 acceptance slice, not a mislabeled alias for the next-stage runtime
 
 Legacy `BarDirectionStrategy` remains in the project as reference-only behavior.
 
@@ -46,6 +53,7 @@ The current codebase includes the critical fixes required by the remediation TZ:
 - startup reconciliation no longer hides shared-instrument mismatches behind zero-quantity pruning
 - startup reconciliation now compares order picture plus material portfolio-level fields
 - state store now supports order-side snapshot persistence without requiring a processed-fill marker path
+- execution-to-fill handoff is now core-owned in `ExecutionHandoff`; active runtime and acceptance paths no longer call adapter-specific fill materializers
 - position, portfolio, risk, and state seams enforce instrument coherence and reject contradictory state
 - `TimeframeContext` and `ContextGate` formally reject malformed context/config instead of admitting or crashing
 - `ContextGate` now expresses session and maintenance restrictions through formal gate reasons instead of ad hoc status
@@ -77,6 +85,7 @@ pytest
 - domain objects are immutable dataclasses
 - local snapshots are written atomically
 - fill processing is idempotent within the current process and restart bridge
+- execution adapters remain the only external boundary; fill handoff normalization lives in Package E
 - impossible fill/state/context conflicts are surfaced explicitly, not normalized away
 
 ## Docs Map

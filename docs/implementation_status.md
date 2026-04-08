@@ -4,13 +4,26 @@
 
 The repository now contains three categories of code:
 
-- an active Wave 1 working contour
-- implemented Wave 2 seams that are phase-separate from the Wave 1 active contour
+- a dedicated `Wave 1G` acceptance contour for `Minimal Core v1`
+- an implemented next-stage runtime contour that is phase-separate from the Wave 1 acceptance contour
 - reserved areas that remain outside current scope
 
-## Active runtime contour
+## Wave 1G acceptance contour
 
-The active acceptance/runtime path currently exercised by the repository is:
+The dedicated `Wave 1G` acceptance path is:
+
+`MarketEvent -> Wave1MtfContext -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+
+Meaning:
+
+- `Wave 1G` now validates `Minimal Core v1` on Wave 1 seams plus the minimal MTF input seam
+- this slice does not depend on `TimeframeContext`, `ContextGate`, or `RecoveryCoordinator`
+- the acceptance path is exercised by `tests/test_acceptance_wave1g_minimal_core.py`
+- execution-to-fill normalization inside this slice is owned by `ExecutionHandoff`, not by adapter-specific helpers
+
+## Implemented next-stage runtime contour
+
+The implemented next-stage runtime path currently exercised by the repository is:
 
 `TimeframeSyncEvent -> TimeframeContext -> ContextGate -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
 
@@ -23,9 +36,9 @@ Meaning:
 
 Naming split:
 
-- `Wave1MtfContext` remains as earlier phase-scoped / legacy naming
-- active runtime/tests use `TimeframeContext + ContextGate`
-- Wave 1 scope remains `Minimal Core v1`; the docs split here is about real runtime usage, not about adding governance or Wave 3 work
+- `Wave1MtfContext` remains as earlier phase-scoped / legacy naming for the Wave 1 acceptance slice
+- runtime-labelled next-stage tests use `TimeframeContext + ContextGate`
+- Wave 1 scope remains `Minimal Core v1`; the docs split here is about honest contour labeling, not about adding governance or Wave 3 work
 
 ## Wave 1 boundary ownership
 
@@ -74,7 +87,7 @@ The repository reflects the completed remediation work from the Wave 1 / Wave 2 
 - impossible oversell is explicit conflict instead of silent clipping
 - zero-quantity zombie positions are removed from portfolio truth
 - builder and close-builder use real step-multiple alignment instead of `quantize` shortcuts
-- acceptance uses a real execution-to-fill handoff helper
+- Package E owns the execution-to-fill handoff through `ExecutionHandoff`
 - fill idempotency covers fallback replay, restart restore bridge, and mixed-source replay
 - context/data integrity includes history-depth warmup, temporal alignment, monotonic timeframe updates, `source_event_time -> event_time`, early readiness guarding, malformed-context rejection, and gap recovery after contiguous updates resume
 - context gate includes formal session restriction and maintenance restriction branches with domain-level reasons
@@ -101,17 +114,18 @@ Interpretation:
 
 ## Practical reading rule
 
-- active runtime/tests currently go through `TimeframeContext + ContextGate`
-- `Wave1MtfContext` naming is retained in older code/tests as legacy phase wording
+- `tests/test_acceptance_wave1g_minimal_core.py` is the truthful `Wave 1G` acceptance slice
+- `tests/test_next_stage_runtime_acceptance.py` is the truthful next-stage runtime slice
+- `Wave1MtfContext` naming is retained as legacy phase wording for the Wave 1 acceptance seam
 - source `docs/spec/` remain the roadmap authority; this file is the repo truth snapshot
 
 ## Wave 1G acceptance checklist
 
-- one MTF-aware market input path reaches `Position` and `PortfolioState`
+- one MTF-aware market input path reaches `Position` and `PortfolioState` through `Wave1MtfContext`
 - restart restores persisted state
 - startup reconciliation runs on restored state
 - execution boundary does not leak into strategy, risk, or state ownership
-- active acceptance path does not depend on the legacy single-bar strategy
+- active acceptance path does not depend on `TimeframeContext + ContextGate`
 - fill identity remains separate from order identity
 
 ## Current test status

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from trading_core.contracts.strategy import StrategyResult
-from trading_core.domain.context import MarketContext
+from trading_core.domain.context import MarketContext, Wave1MtfContext
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.strategy import NoAction, StrategyIntent
 from trading_core.domain.timeframe import TimeframeContext
@@ -78,40 +78,57 @@ class BarDirectionStrategy:
 
 @dataclass(slots=True)
 class MtfBarAlignmentStrategy:
-    """The active Wave 2 strategy operating on the formal timeframe context."""
+    """MTF strategy that accepts the Wave 1 seam and the formal next-stage context."""
 
     strategy_name: str = "mtf_bar_alignment"
     entry_timeframe: str = "15m"
     trend_timeframe: str = "1h"
     min_entry_body_ratio: Decimal = Decimal("0.001")
 
-    def evaluate(self, context: TimeframeContext) -> StrategyResult:
-        """Return an intent only when the formal timeframe context is admitted and aligned."""
+    def evaluate(self, context: TimeframeContext | Wave1MtfContext) -> StrategyResult:
+        """Return an intent only when the provided MTF context is ready and aligned."""
 
-        required_timeframes = (self.entry_timeframe, self.trend_timeframe)
-        if any(context.readiness_flags.get(timeframe) is False for timeframe in required_timeframes):
+        readiness_flags = context.readiness_flags
+        if isinstance(context, TimeframeContext):
+            required_readiness = (
+                readiness_flags.get(self.entry_timeframe) is not False
+                and readiness_flags.get(self.trend_timeframe) is not False
+            )
+            closed_bar_only = context.metadata.get("closed_bar_ok") != "false"
+            no_lookahead_safe = context.metadata.get("lookahead_violation") != "true"
+            entry_bar = context.bars.get(self.entry_timeframe)
+            trend_bar = context.bars.get(self.trend_timeframe)
+        else:
+            required_readiness = all(
+                readiness_flags.get(flag_name) is not False
+                for flag_name in ("entry_ready", "trend_ready", "context_ready")
+            )
+            closed_bar_only = context.closed_bar_only
+            no_lookahead_safe = context.no_lookahead_safe
+            entry_bar = context.entry_bar
+            trend_bar = context.trend_bar
+
+        if not required_readiness:
             return NoAction.create(
                 context_id=context.context_id,
                 reason="context_not_ready",
                 strategy_name=self.strategy_name,
             )
 
-        if context.metadata.get("closed_bar_ok") == "false":
+        if not closed_bar_only:
             return NoAction.create(
                 context_id=context.context_id,
                 reason="closed_bar_only_required",
                 strategy_name=self.strategy_name,
             )
 
-        if context.metadata.get("lookahead_violation") == "true":
+        if not no_lookahead_safe:
             return NoAction.create(
                 context_id=context.context_id,
                 reason="lookahead_boundary_not_safe",
                 strategy_name=self.strategy_name,
             )
 
-        entry_bar = context.bars.get(self.entry_timeframe)
-        trend_bar = context.bars.get(self.trend_timeframe)
         if entry_bar is None or trend_bar is None:
             return NoAction.create(
                 context_id=context.context_id,
