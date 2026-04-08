@@ -82,6 +82,14 @@ class ActiveRuntimeContour:
 
         return self.recovery_coordinator.request_on_error_reconciliation(instrument_id)
 
+    def request_operator_reconciliation(
+        self,
+        instrument_id: str | None = None,
+    ) -> ReconciliationRequest:
+        """Expose operator-command reconciliation as a runtime capability."""
+
+        return self.recovery_coordinator.request_operator_reconciliation(instrument_id)
+
     def process_reconciliation_outcome(
         self,
         outcome: ReconciliationOutcome,

@@ -26,4 +26,9 @@ class RecoveryCoordinatorProtocol(Protocol):
         instrument_id: str | None = None,
     ) -> ReconciliationRequest: ...
 
+    def request_operator_reconciliation(
+        self,
+        instrument_id: str | None = None,
+    ) -> ReconciliationRequest: ...
+
     def process_outcome(self, outcome: ReconciliationOutcome) -> SystemModeTransition | None: ...
