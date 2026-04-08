@@ -8,20 +8,26 @@ The repository now contains three categories of code:
 - implemented Wave 2 seams that are phase-separate from the Wave 1 active contour
 - reserved areas that remain outside current scope
 
-## Active Wave 1 contour
+## Active runtime contour
 
-The active acceptance path is `MTF-first` and phase-correct for Wave 1:
+The active acceptance/runtime path currently exercised by the repository is:
 
-`TimeframeSyncEvent -> Wave1MtfContext -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+`TimeframeSyncEvent -> TimeframeContext -> ContextGate -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
 
 Meaning:
 
 - the active path no longer uses the legacy single-bar strategy
-- the strategy receives `entry timeframe + mandatory HTF input` through the core
+- the strategy receives `entry timeframe + mandatory HTF input` through the formal context seam
+- the runtime path now includes `ContextGate` before strategy evaluation
 - fill identity is handled separately from order identity inside the fill processor and execution-to-fill handoff
-- the active Wave 1 contour does not require full `TimeframeContext + ContextGate` canonization
 
-## Closed Wave 1 scope
+Naming split:
+
+- `Wave1MtfContext` remains as earlier phase-scoped / legacy naming
+- active runtime/tests use `TimeframeContext + ContextGate`
+- Wave 1 scope remains `Minimal Core v1`; the docs split here is about real runtime usage, not about adding governance or Wave 3 work
+
+## Wave 1 boundary ownership
 
 - `Package A` - normalized input and early context seam
 - `Package B` - strategy decision boundary
@@ -73,6 +79,8 @@ The repository reflects the completed remediation work from the Wave 1 / Wave 2 
 - context/data integrity includes history-depth warmup, temporal alignment, monotonic timeframe updates, `source_event_time -> event_time`, early readiness guarding, malformed-context rejection, and gap recovery after contiguous updates resume
 - context gate includes formal session restriction and maintenance restriction branches with domain-level reasons
 - startup reconciliation no longer hides shared-instrument mismatch after zero-quantity pruning
+- startup reconciliation compares orders + positions + portfolio-level picture
+- state store exposes an order-side persistence path without forcing a processed-fill marker
 - risk, position, portfolio, and close-routing seams reject cross-instrument contradiction explicitly
 - recovery mode transitions do not auto-downgrade from `SAFE_MODE` or `FROZEN`
 - reconciliation loop exposes startup, periodic, on-error, and operator-command triggers as one formal capability
@@ -91,6 +99,12 @@ Interpretation:
 - tolerance is not silently widened by default
 - any relaxed comparison must be chosen explicitly by the caller
 
+## Practical reading rule
+
+- active runtime/tests currently go through `TimeframeContext + ContextGate`
+- `Wave1MtfContext` naming is retained in older code/tests as legacy phase wording
+- source `docs/spec/` remain the roadmap authority; this file is the repo truth snapshot
+
 ## Wave 1G acceptance checklist
 
 - one MTF-aware market input path reaches `Position` and `PortfolioState`
@@ -102,10 +116,8 @@ Interpretation:
 
 ## Current test status
 
-- full suite: `240 passed`
+- full suite: `244 passed`
 - the suite includes targeted regressions for the Wave 1 / Wave 2 critical-fix cases
-
-## Practical reading rule
 
 - [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md) is the quickest status map
 - this file is the working implementation snapshot

@@ -22,6 +22,7 @@ from trading_core.domain import (
     ExecutionReport,
     ExecutionReportKind,
     ExternalStartupBasis,
+    ExternalStartupOrderRecord,
     ExternalStartupPosition,
     Fill,
     GuardOutcome,
@@ -322,12 +323,17 @@ def test_wave1g_restart_restores_state_and_passes_startup_reconciliation(
 
     external_basis = ExternalStartupBasis.create(
         cash_balance=original_portfolio.cash_balance,
+        available_cash_balance=original_portfolio.available_cash_balance,
+        reserved_cash_balance=original_portfolio.reserved_cash_balance,
+        realized_pnl=original_portfolio.realized_pnl,
+        equity=original_portfolio.equity,
         positions={
             "btc-usdt": ExternalStartupPosition(
                 instrument_id="btc-usdt",
                 quantity=original_portfolio.positions["btc-usdt"].quantity,
             )
         },
+        order_picture={},
     )
     reconciliation_result = SimpleStartupReconciler().reconcile(loaded_snapshot, external_basis)
 

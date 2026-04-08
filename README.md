@@ -22,19 +22,19 @@ Implemented next-stage seams with critical-fix coverage:
 - `2D` reconciliation loop coordinator across startup, periodic, on-error, and operator-command triggers
 - `2E` position-originated close routing
 
-Wave 1 active acceptance still uses `Wave1MtfContextAssembler` and `MtfBarAlignmentStrategy`. The Wave 2 seams are implemented and tested, but they remain distinct from the canonical Wave 1 active contour. See [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md).
+The current runtime/tests use formal `TimeframeContext + ContextGate` ahead of `MtfBarAlignmentStrategy`. Earlier `Wave1MtfContext` naming is still present in the repo as legacy phase wording, but it is not the primary acceptance/runtime path anymore. See [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md).
 
-## Active Wave 1 Path
+## Active Runtime Path
 
 The current working path is:
 
-`TimeframeSyncEvent -> Wave1MtfContext -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+`TimeframeSyncEvent -> TimeframeContext -> ContextGate -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
 
 Important boundary:
 
-- Wave 1 active acceptance is `MTF-first`
-- the strategy receives `entry timeframe + mandatory HTF input` through the core
-- full `TimeframeContext` and `ContextGate` exist in the repository, but they are not required for the Wave 1 acceptance contour
+- Wave 1 active acceptance remains `MTF-first`
+- the strategy receives `entry timeframe + mandatory HTF input` through the formal context seam used in runtime/tests
+- `Wave1MtfContext` remains in the codebase as early/legacy naming, not as the primary runtime contour label
 
 Legacy `BarDirectionStrategy` remains in the project as reference-only behavior.
 
@@ -44,6 +44,8 @@ The current codebase includes the critical fixes required by the remediation TZ:
 
 - builder and close-builder use real step-multiple alignment rather than `quantize` shortcuts
 - startup reconciliation no longer hides shared-instrument mismatches behind zero-quantity pruning
+- startup reconciliation now compares order picture plus material portfolio-level fields
+- state store now supports order-side snapshot persistence without requiring a processed-fill marker path
 - position, portfolio, risk, and state seams enforce instrument coherence and reject contradictory state
 - `TimeframeContext` and `ContextGate` formally reject malformed context/config instead of admitting or crashing
 - `ContextGate` now expresses session and maintenance restrictions through formal gate reasons instead of ad hoc status
@@ -62,7 +64,7 @@ This means exact `Decimal` equality by default. Any tolerant comparison must be 
 
 ## Running Tests
 
-The current suite is green: `240 passed`.
+The current suite is green: `244 passed`.
 
 ```bash
 pytest

@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Mapping
 
 from trading_core.domain.common import new_internal_id, require_utc_datetime, utc_now
+from trading_core.domain.execution import ExecutionReportKind
 
 
 class StartupReconciliationVerdict(StrEnum):
@@ -33,7 +34,12 @@ class ExternalStartupBasis:
     """External startup view used only by startup reconciliation."""
 
     cash_balance: Decimal
+    available_cash_balance: Decimal
+    reserved_cash_balance: Decimal
+    realized_pnl: Decimal
+    equity: Decimal
     positions: Mapping[str, ExternalStartupPosition]
+    order_picture: Mapping[str, "ExternalStartupOrderRecord"]
     observed_at: datetime
     metadata: Mapping[str, str] = field(default_factory=dict)
 
@@ -45,15 +51,38 @@ class ExternalStartupBasis:
         cls,
         *,
         cash_balance: Decimal,
+        available_cash_balance: Decimal | None = None,
+        reserved_cash_balance: Decimal = Decimal("0"),
+        realized_pnl: Decimal = Decimal("0"),
+        equity: Decimal | None = None,
         positions: Mapping[str, ExternalStartupPosition] | None = None,
+        order_picture: Mapping[str, "ExternalStartupOrderRecord"] | None = None,
         metadata: Mapping[str, str] | None = None,
     ) -> "ExternalStartupBasis":
         return cls(
             cash_balance=cash_balance,
+            available_cash_balance=(
+                cash_balance if available_cash_balance is None else available_cash_balance
+            ),
+            reserved_cash_balance=reserved_cash_balance,
+            realized_pnl=realized_pnl,
+            equity=cash_balance if equity is None else equity,
             positions=dict(positions or {}),
+            order_picture=dict(order_picture or {}),
             observed_at=utc_now(),
             metadata=dict(metadata or {}),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalStartupOrderRecord:
+    """Minimal external startup order-side picture for startup reconciliation."""
+
+    order_intent_id: str
+    external_order_id: str | None
+    last_report_kind: ExecutionReportKind
+    reason: str | None = None
+    metadata: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

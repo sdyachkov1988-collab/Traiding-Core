@@ -22,12 +22,12 @@ This repository is organized around seam ownership, not around exchange adapters
 - `src/trading_core/governance/` - reserved governance/policy seam
 - `tests/` - package, regression, and acceptance coverage
 
-## Active Wave 1 contour
+## Active runtime contour
 
-The active Wave 1 path currently uses:
+The active runtime/acceptance path currently uses:
 
-- `src/trading_core/input/`
-  with `Wave1MtfContextAssembler`
+- `src/trading_core/context/`
+  with `TimeframeContextAssembler`, `ContextGate`, and their supporting policies
 - `src/trading_core/strategy/`
   with `MtfBarAlignmentStrategy`
 - `src/trading_core/risk/`
@@ -40,6 +40,12 @@ The active Wave 1 path currently uses:
 - `src/trading_core/reconciliation/startup.py`
 
 This is the working acceptance contour for the current core.
+
+Naming split:
+
+- `Wave1MtfContextAssembler` remains in the repository as earlier / legacy phase naming
+- active runtime/tests use `TimeframeContext + ContextGate`
+- the status docs distinguish the actual runtime path from older naming so the repo map does not contradict the tests
 
 ## Implemented Wave 2 seams
 

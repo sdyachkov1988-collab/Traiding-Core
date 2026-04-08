@@ -13,6 +13,7 @@ from trading_core.domain.orders import OrderIntent, OrderSide, OrderType, TimeIn
 from trading_core.domain.portfolio_state import PortfolioState, Position
 from trading_core.domain.reconciliation import (
     ExternalStartupBasis,
+    ExternalStartupOrderRecord,
     ExternalStartupPosition,
     StartupReconciliationResult,
     StartupReconciliationVerdict,
@@ -52,6 +53,7 @@ __all__ = [
     "ExecutionConstraintBasis",
     "ExecutionReportKind",
     "ExternalStartupBasis",
+    "ExternalStartupOrderRecord",
     "ExternalStartupPosition",
     "Fill",
     "GateOutcome",

@@ -69,6 +69,25 @@ class JsonFileStateStore:
         self._write_snapshot(snapshot)
         return snapshot
 
+    def save_with_order_picture(
+        self,
+        portfolio_state: PortfolioState,
+        order_picture: dict[str, PersistedOrderRecord],
+    ) -> PersistedStateSnapshot:
+        """Persist portfolio state plus order-side picture without requiring a fill marker."""
+
+        self._validate_portfolio_state(portfolio_state)
+        snapshot = PersistedStateSnapshot.create(
+            portfolio_state=portfolio_state,
+            order_picture=order_picture,
+            metadata={
+                "storage_format": "json",
+                "accounting_policy": "assembly_level_fee_in_cost_basis",
+            },
+        )
+        self._write_snapshot(snapshot)
+        return snapshot
+
     def load_latest(self) -> PersistedStateSnapshot | None:
         """Load the latest locally persisted portfolio snapshot, if any."""
 

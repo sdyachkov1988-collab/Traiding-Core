@@ -7,9 +7,11 @@ from decimal import Decimal
 
 from trading_core.domain.reconciliation import (
     ExternalStartupBasis,
+    ExternalStartupOrderRecord,
     StartupReconciliationResult,
     StartupReconciliationVerdict,
 )
+from trading_core.domain.state import PersistedOrderRecord
 from trading_core.domain.state import PersistedStateSnapshot
 
 
@@ -41,6 +43,36 @@ class SimpleStartupReconciler:
             return StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason="cash_balance_mismatch",
+            )
+        if local_portfolio.available_cash_balance != external_basis.available_cash_balance:
+            return StartupReconciliationResult.create(
+                verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
+                reason="available_cash_balance_mismatch",
+            )
+        if local_portfolio.reserved_cash_balance != external_basis.reserved_cash_balance:
+            return StartupReconciliationResult.create(
+                verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
+                reason="reserved_cash_balance_mismatch",
+            )
+        if local_portfolio.realized_pnl != external_basis.realized_pnl:
+            return StartupReconciliationResult.create(
+                verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
+                reason="realized_pnl_mismatch",
+            )
+        if local_portfolio.equity != external_basis.equity:
+            return StartupReconciliationResult.create(
+                verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
+                reason="equity_mismatch",
+            )
+
+        orders_match, order_reason = self._order_pictures_match(
+            local_snapshot.order_picture,
+            external_basis.order_picture,
+        )
+        if not orders_match:
+            return StartupReconciliationResult.create(
+                verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
+                reason=order_reason,
             )
 
         local_instruments = set(local_portfolio.positions)
@@ -95,3 +127,22 @@ class SimpleStartupReconciler:
         return StartupReconciliationResult.create(
             verdict=StartupReconciliationVerdict.CONSISTENT,
         )
+
+    def _order_pictures_match(
+        self,
+        local_order_picture: dict[str, PersistedOrderRecord],
+        external_order_picture: dict[str, ExternalStartupOrderRecord],
+    ) -> tuple[bool, str | None]:
+        if set(local_order_picture) != set(external_order_picture):
+            return False, "order_picture_mismatch"
+
+        for order_intent_id, local_record in local_order_picture.items():
+            external_record = external_order_picture[order_intent_id]
+            if local_record.external_order_id != external_record.external_order_id:
+                return False, "order_picture_mismatch"
+            if local_record.last_report_kind != external_record.last_report_kind:
+                return False, "order_picture_mismatch"
+            if local_record.reason != external_record.reason:
+                return False, "order_picture_mismatch"
+
+        return True, None

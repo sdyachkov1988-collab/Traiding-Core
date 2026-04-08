@@ -9,4 +9,4 @@ Current test categories:
 - Wave 2 seam tests for context, recovery, reconciliation loop, and close routing;
 - targeted regressions for the Wave 1 / Wave 2 critical-fix cases.
 
-Current suite status: `240 passed`
+Current suite status: `244 passed`
