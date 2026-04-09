@@ -268,9 +268,11 @@ def test_state_store_restart_restore_rejects_duplicate_fallback_identity(tmp_pat
         quantity=first.quantity,
         price=first.price,
         fee=first.fee,
+        executed_at=first.executed_at,
     )
 
-    assert restarted_processor.accept(duplicate_fallback) is duplicate_fallback
+    with pytest.raises(ValueError, match="Duplicate fallback fill identity"):
+        restarted_processor.accept(duplicate_fallback)
 
 
 def test_state_store_restart_restore_accepts_distinct_fill_after_checkpoint_restore(
@@ -497,3 +499,20 @@ def test_json_file_state_store_rejects_corrupted_snapshot_load(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="position_key_must_match_position_instrument_id"):
         JsonFileStateStore(target_path).load_latest()
+
+
+def test_json_file_state_store_loads_only_consistent_latest_snapshot_when_tmp_exists(
+    tmp_path: Path,
+) -> None:
+    target_path = tmp_path / "state" / "latest.json"
+    store = JsonFileStateStore(target_path)
+    portfolio = PortfolioState.empty(cash_balance=Decimal("1000"))
+
+    store.save_with_fill_marker(portfolio, "fill_1")
+    target_path.with_suffix(".tmp").write_text("{not-json", encoding="utf-8")
+
+    loaded = store.load_latest()
+
+    assert loaded is not None
+    assert loaded.last_processed_fill_id == "fill_1"
+    assert loaded.portfolio_state.cash_balance == Decimal("1000")

@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from trading_core.domain.guards import ExecutionAdmissibilityBasis, GuardOutcome, GuardVerdict
 from trading_core.domain.orders import OrderIntent, OrderType
+from trading_core.observability import emit_structured_event
 
 
 @dataclass(slots=True)
@@ -45,19 +46,49 @@ class SimplePreExecutionGuard:
         if notional < basis.min_notional:
             return self._reject(intent, "below_min_notional")
 
-        return GuardOutcome.create(
+        outcome = GuardOutcome.create(
             verdict=GuardVerdict.PASSED,
             order_intent_id=intent.order_intent_id,
             metadata={"instrument_id": basis.instrument_id},
         )
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="guard_outcome",
+            entity_type="guard_outcome",
+            entity_id=outcome.guard_outcome_id,
+            lineage_id=outcome.order_intent_id,
+            stage="execution_preparation",
+            lifecycle_step="guard_checked",
+            decision=outcome.verdict.value,
+            outcome=outcome.verdict.value,
+            reason=outcome.reason,
+            reason_code=outcome.reason,
+            metadata={"instrument_id": basis.instrument_id},
+        )
+        return outcome
 
     def _reject(self, intent: OrderIntent, reason: str) -> GuardOutcome:
-        return GuardOutcome.create(
+        outcome = GuardOutcome.create(
             verdict=GuardVerdict.REJECTED,
             order_intent_id=intent.order_intent_id,
             reason=reason,
             metadata={"instrument_id": intent.instrument.instrument_id},
         )
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="guard_outcome",
+            entity_type="guard_outcome",
+            entity_id=outcome.guard_outcome_id,
+            lineage_id=outcome.order_intent_id,
+            stage="execution_preparation",
+            lifecycle_step="guard_checked",
+            decision=outcome.verdict.value,
+            outcome=outcome.verdict.value,
+            reason=outcome.reason,
+            reason_code=outcome.reason,
+            metadata={"instrument_id": intent.instrument.instrument_id},
+        )
+        return outcome
 
     def _is_step_aligned(self, value: Decimal, step: Decimal) -> bool:
         return value % step == Decimal("0")

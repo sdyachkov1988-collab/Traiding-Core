@@ -9,6 +9,7 @@ from trading_core.domain.close_intent import CloseIntent
 from trading_core.domain.instruments import ExecutionConstraintBasis, InstrumentExecutionSpec
 from trading_core.domain.orders import OrderIntent, OrderSide, OrderType, TimeInForce
 from trading_core.domain.risk import RiskDecision, RiskVerdict
+from trading_core.observability import emit_structured_event
 
 
 @dataclass(slots=True)
@@ -48,7 +49,7 @@ class SimpleOrderIntentBuilder:
                 side=side,
             )
 
-        return OrderIntent.create(
+        order_intent = OrderIntent.create(
             risk_decision_id=decision.risk_decision_id,
             instrument=decision.instrument,
             side=side,
@@ -58,6 +59,21 @@ class SimpleOrderIntentBuilder:
             limit_price=limit_price,
             metadata={"strategy_intent_id": decision.strategy_intent_id},
         )
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="order_intent",
+            entity_type="order_intent",
+            entity_id=order_intent.order_intent_id,
+            lineage_id=decision.risk_decision_id,
+            stage="execution_preparation",
+            lifecycle_step="order_intent_built",
+            decision="build_order_intent",
+            outcome="created",
+            reason=decision.verdict.value,
+            reason_code=decision.verdict.value,
+            metadata={"instrument_id": order_intent.instrument.instrument_id},
+        )
+        return order_intent
 
     def build_close_order(
         self,

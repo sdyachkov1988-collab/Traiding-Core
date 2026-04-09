@@ -489,7 +489,7 @@ def test_fill_processor_rejects_replayed_fill_without_external_id_after_external
         fill_processor.accept(replayed_without_external_id)
 
 
-def test_fill_processor_falls_back_to_internal_fill_id_when_external_id_missing() -> None:
+def test_fill_processor_uses_deterministic_fallback_identity_when_external_id_missing() -> None:
     fill_processor = IdempotentFillProcessor()
     fill = Fill.create(
         order_intent_id="ordint_1",
@@ -521,10 +521,12 @@ def test_fill_processor_rejects_recreated_duplicate_without_external_id() -> Non
         quantity=Decimal("0.10"),
         price=Decimal("100"),
         fee=Decimal("0"),
+        executed_at=first.executed_at,
     )
 
     fill_processor.accept(first)
-    assert fill_processor.accept(replayed) is replayed
+    with pytest.raises(ValueError, match="Duplicate fallback fill identity"):
+        fill_processor.accept(replayed)
 
 
 def test_fill_processor_accepts_distinct_external_fill_ids() -> None:
@@ -594,6 +596,32 @@ def test_fill_processor_accepts_partial_fills_with_same_economic_shape_when_line
 
     assert fill_processor.accept(first) is first
     assert fill_processor.accept(second) is second
+
+
+def test_fill_processor_rejects_duplicate_partial_fill_replay_with_same_fragment_identity() -> None:
+    fill_processor = IdempotentFillProcessor()
+    first = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+        metadata={"execution_report_id": "exec_1", "execution_fragment": "1"},
+    )
+    replayed = Fill.create(
+        order_intent_id="ordint_1",
+        instrument=instrument(),
+        side=OrderSide.BUY,
+        quantity=Decimal("0.10"),
+        price=Decimal("100"),
+        fee=Decimal("0"),
+        metadata={"execution_report_id": "exec_1", "execution_fragment": "1"},
+    )
+
+    assert fill_processor.accept(first) is first
+    with pytest.raises(ValueError, match="Duplicate fallback fill identity"):
+        fill_processor.accept(replayed)
 
 
 def test_fill_create_rejects_zero_quantity() -> None:

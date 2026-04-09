@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from trading_core.domain.common import new_internal_id
 from trading_core.domain.reconciliation import (
     ExternalStartupBasis,
     ExternalStartupOrderRecord,
@@ -13,6 +14,7 @@ from trading_core.domain.reconciliation import (
 )
 from trading_core.domain.state import PersistedOrderRecord
 from trading_core.domain.state import PersistedStateSnapshot
+from trading_core.observability import emit_structured_event
 
 
 @dataclass(slots=True)
@@ -31,38 +33,64 @@ class SimpleStartupReconciler:
     ) -> StartupReconciliationResult:
         """Return a formal startup reconciliation result only."""
 
+        reconciliation_start_id = new_internal_id("reconcile_start")
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="reconciliation_start",
+            entity_type="startup_reconciliation",
+            entity_id=reconciliation_start_id,
+            lineage_id="startup_reconciliation",
+            stage="reconciliation",
+            lifecycle_step="startup_reconciliation_started",
+            decision="reconcile",
+            outcome="started",
+            reason="startup_snapshot_check",
+            reason_code="startup_snapshot_check",
+        )
         if local_snapshot is None:
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.INSUFFICIENT_DATA_OR_TIMEOUT,
                 reason="no_local_snapshot",
+                )
             )
 
         local_portfolio = local_snapshot.portfolio_state
         cash_delta = abs(local_portfolio.cash_balance - external_basis.cash_balance)
         if cash_delta > self.cash_tolerance:
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason="cash_balance_mismatch",
+                )
             )
         if local_portfolio.available_cash_balance != external_basis.available_cash_balance:
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason="available_cash_balance_mismatch",
+                )
             )
         if local_portfolio.reserved_cash_balance != external_basis.reserved_cash_balance:
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason="reserved_cash_balance_mismatch",
+                )
             )
         if local_portfolio.realized_pnl != external_basis.realized_pnl:
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason="realized_pnl_mismatch",
+                )
             )
         if local_portfolio.equity != external_basis.equity:
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason="equity_mismatch",
+                )
             )
 
         orders_match, order_reason = self._order_pictures_match(
@@ -70,9 +98,11 @@ class SimpleStartupReconciler:
             external_basis.order_picture,
         )
         if not orders_match:
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason=order_reason,
+                )
             )
 
         local_instruments = set(local_portfolio.positions)
@@ -94,38 +124,50 @@ class SimpleStartupReconciler:
                         external_position = external_basis.positions[instrument_id]
                         quantity_delta = abs(local_position.quantity - external_position.quantity)
                         if quantity_delta > self.quantity_tolerance:
-                            return StartupReconciliationResult.create(
+                            return self._log_result(
+                                StartupReconciliationResult.create(
                                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                                 reason="position_quantity_mismatch",
                                 metadata={"instrument_id": instrument_id},
+                                )
                             )
-                    return StartupReconciliationResult.create(
+                    return self._log_result(
+                        StartupReconciliationResult.create(
                         verdict=StartupReconciliationVerdict.CORRECTED,
                         reason="zero_quantity_positions_pruned",
                         metadata={"instrument_ids": ",".join(sorted(extra_local_instruments))},
+                        )
                     )
             if not local_instruments and not external_instruments:
-                return StartupReconciliationResult.create(
+                return self._log_result(
+                    StartupReconciliationResult.create(
                     verdict=StartupReconciliationVerdict.CORRECTED,
                     reason="position_picture_normalized",
+                    )
                 )
-            return StartupReconciliationResult.create(
+            return self._log_result(
+                StartupReconciliationResult.create(
                 verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                 reason="position_set_mismatch",
+                )
             )
 
         for instrument_id, local_position in local_portfolio.positions.items():
             external_position = external_basis.positions[instrument_id]
             quantity_delta = abs(local_position.quantity - external_position.quantity)
             if quantity_delta > self.quantity_tolerance:
-                return StartupReconciliationResult.create(
+                return self._log_result(
+                    StartupReconciliationResult.create(
                     verdict=StartupReconciliationVerdict.CANNOT_RECONCILE,
                     reason="position_quantity_mismatch",
                     metadata={"instrument_id": instrument_id},
+                    )
                 )
 
-        return StartupReconciliationResult.create(
+        return self._log_result(
+            StartupReconciliationResult.create(
             verdict=StartupReconciliationVerdict.CONSISTENT,
+            )
         )
 
     def _order_pictures_match(
@@ -146,3 +188,20 @@ class SimpleStartupReconciler:
                 return False, "order_picture_mismatch"
 
         return True, None
+
+    def _log_result(self, result: StartupReconciliationResult) -> StartupReconciliationResult:
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="reconciliation_outcome",
+            entity_type="startup_reconciliation",
+            entity_id=result.reconciliation_result_id,
+            lineage_id="startup_reconciliation",
+            stage="reconciliation",
+            lifecycle_step="startup_reconciliation_completed",
+            decision=result.verdict.value,
+            outcome=result.verdict.value,
+            reason=result.reason,
+            reason_code=result.reason,
+            metadata=dict(result.metadata),
+        )
+        return result

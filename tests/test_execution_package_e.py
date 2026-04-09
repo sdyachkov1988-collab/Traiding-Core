@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from trading_core.contracts.execution import ExecutionAdapter, ExecutionSubmitter
 from trading_core.domain import (
     AdmittedOrder,
@@ -301,6 +303,36 @@ def test_mock_execution_adapter_can_model_missing_confirmation() -> None:
         ExecutionReportKind.ACCEPTED,
         ExecutionReportKind.PENDING,
     )
+
+
+def test_mock_execution_adapter_exposes_deterministic_partial_fill_plan_metadata() -> None:
+    adapter = MockExecutionAdapter(partial_fill_plan=("0.04", "0.07"))
+    admitted_order = build_admitted_order()
+
+    reports = adapter.submit(admitted_order)
+    accepted_report = next(report for report in reports if report.kind is ExecutionReportKind.ACCEPTED)
+
+    assert accepted_report.metadata["partial_fill_plan"] == "0.04,0.07"
+
+
+def test_mock_execution_adapter_can_model_state_mismatch_on_query() -> None:
+    adapter = MockExecutionAdapter(simulate_state_mismatch=True)
+    admitted_order = build_admitted_order()
+    reports = adapter.submit(admitted_order)
+    accepted_report = next(report for report in reports if report.kind is ExecutionReportKind.ACCEPTED)
+
+    queried_reports = adapter.query(accepted_report.external_order_id or "")
+
+    assert queried_reports[-1].kind is ExecutionReportKind.REJECTED
+    assert queried_reports[-1].reason == "state_mismatch_detected"
+
+
+def test_mock_execution_adapter_supports_failure_injection_hooks() -> None:
+    adapter = MockExecutionAdapter(failure_injection={"submit": "forced_submit_failure"})
+    admitted_order = build_admitted_order()
+
+    with pytest.raises(RuntimeError, match="mock_failure_injection:submit:forced_submit_failure"):
+        adapter.submit(admitted_order)
 
 
 def test_execution_handoff_exposes_extended_execution_capabilities() -> None:

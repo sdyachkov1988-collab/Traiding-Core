@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import ClassVar
 
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.portfolio_state import PortfolioState, Position
@@ -20,8 +23,16 @@ from trading_core.domain.state import (
 class JsonFileStateStore:
     """Persist the latest local portfolio snapshot to a JSON file."""
 
+    _lock_registry_guard: ClassVar[threading.Lock] = threading.Lock()
+    _path_locks: ClassVar[dict[Path, threading.RLock]] = {}
+
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
+        with self._lock_registry_guard:
+            self._write_lock = self._path_locks.setdefault(
+                self._path.resolve(),
+                threading.RLock(),
+            )
 
     def save(
         self,
@@ -91,18 +102,23 @@ class JsonFileStateStore:
     def load_latest(self) -> PersistedStateSnapshot | None:
         """Load the latest locally persisted portfolio snapshot, if any."""
 
-        if not self._path.exists():
-            return None
+        with self._write_lock:
+            if not self._path.exists():
+                return None
 
-        payload = json.loads(self._path.read_text(encoding="utf-8"))
-        return self._deserialize_snapshot(payload)
+            payload = json.loads(self._path.read_text(encoding="utf-8"))
+            return self._deserialize_snapshot(payload)
 
     def _write_snapshot(self, snapshot: PersistedStateSnapshot) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        payload = self._serialize_snapshot(snapshot)
-        temp_path = self._path.with_suffix(".tmp")
-        temp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        temp_path.replace(self._path)
+        with self._write_lock:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            payload = self._serialize_snapshot(snapshot)
+            temp_path = self._path.with_suffix(".tmp")
+            with temp_path.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            temp_path.replace(self._path)
 
     def _is_pristine_snapshot_candidate(
         self,
@@ -277,7 +293,7 @@ class JsonFileStateStore:
         if not isinstance(raw_fallback_keys, list):
             raise TypeError(f"expected list, got {type(raw_fallback_keys).__name__}")
 
-        fallback_keys: list[tuple[str, str, str, str, str, str]] = []
+        fallback_keys: list[tuple[str, ...]] = []
         for raw_key in raw_fallback_keys:
             if not isinstance(raw_key, (list, tuple)):
                 raise TypeError("fill_dedup_checkpoint.seen_fallback_keys entries must be sequences")

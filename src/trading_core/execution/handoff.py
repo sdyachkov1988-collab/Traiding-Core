@@ -11,6 +11,7 @@ from trading_core.domain.execution import AdmittedOrder, ExecutionReport
 from trading_core.domain.execution import ExecutionReportKind
 from trading_core.domain.fills import Fill
 from trading_core.domain.instruments import InstrumentExecutionSpec
+from trading_core.observability import emit_structured_event
 
 
 @dataclass(slots=True)
@@ -22,17 +23,26 @@ class ExecutionHandoff:
     def place(self, admitted_order: AdmittedOrder) -> tuple[ExecutionReport, ...]:
         """Place an admitted order through the execution boundary."""
 
-        return self.adapter.submit(admitted_order)
+        reports = self.adapter.submit(admitted_order)
+        for report in reports:
+            self._log_report(report)
+        return reports
 
     def cancel(self, external_order_id: str) -> tuple[ExecutionReport, ...]:
         """Cancel an order through the execution boundary."""
 
-        return self.adapter.cancel(external_order_id)
+        reports = self.adapter.cancel(external_order_id)
+        for report in reports:
+            self._log_report(report)
+        return reports
 
     def query(self, external_order_id: str) -> tuple[ExecutionReport, ...]:
         """Query order state through the execution boundary."""
 
-        return self.adapter.query(external_order_id)
+        reports = self.adapter.query(external_order_id)
+        for report in reports:
+            self._log_report(report)
+        return reports
 
     def get_balances(self) -> Mapping[str, Decimal]:
         """Expose normalized account balances from the execution boundary."""
@@ -59,7 +69,7 @@ class ExecutionHandoff:
             admitted_order=admitted_order,
             execution_price=execution_price,
         )
-        return Fill.create(
+        fill = Fill.create(
             order_intent_id=admitted_order.order_intent.order_intent_id,
             instrument=admitted_order.order_intent.instrument,
             side=admitted_order.order_intent.side,
@@ -79,6 +89,8 @@ class ExecutionHandoff:
                 ),
             },
         )
+        self._log_fill(fill)
+        return fill
 
     def materialize_fills(
         self,
@@ -140,6 +152,8 @@ class ExecutionHandoff:
                     },
                 )
             )
+        for fill in fills:
+            self._log_fill(fill)
         return tuple(fills)
 
     def _validate_fill_handoff(
@@ -169,3 +183,40 @@ class ExecutionHandoff:
         base_order_id = report.external_order_id or "execution_report"
         fragment_suffix = "" if fragment is None else f"_{fragment}"
         return f"{base_order_id}_fill_{report.report_id}{fragment_suffix}"
+
+    def _log_report(self, report: ExecutionReport) -> None:
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="execution_report",
+            entity_type="execution_report",
+            entity_id=report.report_id,
+            lineage_id=report.order_intent_id,
+            stage="execution_boundary",
+            lifecycle_step="report_received",
+            decision=report.kind.value,
+            outcome=report.kind.value,
+            reason=report.reason,
+            reason_code=report.reason,
+            metadata={
+                "external_order_id": report.external_order_id or "",
+            },
+        )
+
+    def _log_fill(self, fill: Fill) -> None:
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="fill_fact",
+            entity_type="fill",
+            entity_id=fill.fill_id,
+            lineage_id=fill.order_intent_id,
+            stage="fill_processing",
+            lifecycle_step="fill_materialized",
+            decision="materialize_fill",
+            outcome="created",
+            reason=fill.metadata.get("execution_report_id"),
+            reason_code=fill.metadata.get("execution_report_id"),
+            metadata={
+                "instrument_id": fill.instrument.instrument_id,
+                "external_fill_id": fill.external_fill_id or "",
+            },
+        )

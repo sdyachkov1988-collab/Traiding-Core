@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import timedelta, timezone
 from decimal import Decimal
+
+import pytest
 
 from trading_core.context.assembler import TimeframeContextAssembler
 from trading_core.context.gate import ContextGate
@@ -496,3 +500,63 @@ def test_admitted_context_can_flow_into_strategy_intent() -> None:
     assert outcome.verdict == GateVerdict.ADMITTED
     assert isinstance(strategy_intent, StrategyIntent)
     assert strategy_intent.side == OrderSide.BUY
+
+
+def test_context_gate_emits_structured_log_for_admitted_path(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    gate = ContextGate(
+        warmup_bars=2,
+        freshness_policy=FreshnessPolicy(max_age_seconds=300),
+        required_timeframes=("15m", "1h"),
+    )
+    context = make_context(history_depths={"15m": 2, "1h": 2})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.ADMITTED
+    payloads = [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == "trading_core.context.gate"
+    ]
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["event_type"] == "context_gate"
+    assert payload["entity_type"] == "gate_outcome"
+    assert payload["stage"] == "context_gate"
+    assert payload["lifecycle_step"] == "gate_checked"
+    assert payload["decision"] == "admitted"
+    assert payload["outcome"] == "admitted"
+    assert payload["reason"] == ""
+    assert payload["reason_code"] == ""
+    assert payload["lineage_id"] == context.context_id
+
+
+def test_context_gate_emits_structured_log_for_reject_with_formal_reason(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO)
+    gate = ContextGate(warmup_bars=2, freshness_policy=FreshnessPolicy(max_age_seconds=300))
+    context = make_context(metadata={"maintenance_restricted": "true"})
+
+    outcome = gate.check(context)
+
+    assert outcome.verdict == GateVerdict.REJECTED
+    assert outcome.reason == GateReason.MAINTENANCE_RESTRICTED
+    payloads = [
+        json.loads(record.getMessage())
+        for record in caplog.records
+        if record.name == "trading_core.context.gate"
+    ]
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["event_type"] == "context_gate"
+    assert payload["entity_type"] == "gate_outcome"
+    assert payload["stage"] == "context_gate"
+    assert payload["lifecycle_step"] == "gate_checked"
+    assert payload["decision"] == "rejected"
+    assert payload["outcome"] == "rejected"
+    assert payload["reason"] == "maintenance_restricted"
+    assert payload["reason_code"] == "maintenance_restricted"

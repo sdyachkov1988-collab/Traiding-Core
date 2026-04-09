@@ -9,6 +9,7 @@ from trading_core.domain.common import new_internal_id
 from trading_core.domain.fills import Fill
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.portfolio_state import PortfolioState, Position
+from trading_core.observability import emit_structured_event
 
 
 @dataclass(slots=True)
@@ -59,7 +60,7 @@ class SpotPortfolioEngine:
             next_metadata.pop("reconcile_required", None)
             next_metadata.pop("reconcile_reasons", None)
         next_metadata.setdefault("equity_valuation_basis", "cash_plus_position_cost_basis")
-        return PortfolioState(
+        next_portfolio = PortfolioState(
             portfolio_state_id=new_internal_id("portfolio"),
             cash_balance=next_cash_balance,
             available_cash_balance=next_available_cash,
@@ -71,3 +72,18 @@ class SpotPortfolioEngine:
             updated_at=max(current.updated_at, fill.executed_at),
             metadata=next_metadata,
         )
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="portfolio_update",
+            entity_type="portfolio_state",
+            entity_id=next_portfolio.portfolio_state_id,
+            lineage_id=fill.fill_id,
+            stage="portfolio_state",
+            lifecycle_step="portfolio_updated",
+            decision="apply_fill",
+            outcome="updated",
+            reason="reconcile_required" if conflict_flags else "portfolio_consistent",
+            reason_code="reconcile_required" if conflict_flags else "portfolio_consistent",
+            metadata={"instrument_id": fill.instrument.instrument_id},
+        )
+        return next_portfolio

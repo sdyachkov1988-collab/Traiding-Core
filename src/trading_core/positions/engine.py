@@ -9,6 +9,7 @@ from trading_core.domain.close_intent import CloseIntent
 from trading_core.domain.fills import Fill
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.portfolio_state import Position
+from trading_core.observability import emit_structured_event
 
 
 @dataclass(slots=True)
@@ -68,7 +69,7 @@ class SpotPositionEngine:
                 Decimal("0") if new_quantity <= Decimal("0") else position.average_entry_price
             )
 
-        return Position(
+        next_position = Position(
             position_id=position.position_id,
             instrument=position.instrument,
             quantity=new_quantity,
@@ -77,3 +78,18 @@ class SpotPositionEngine:
             updated_at=max(position.updated_at, fill.executed_at),
             metadata=position.metadata,
         )
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="position_update",
+            entity_type="position",
+            entity_id=next_position.position_id,
+            lineage_id=fill.fill_id,
+            stage="position_state",
+            lifecycle_step="position_updated",
+            decision="apply_fill",
+            outcome="updated",
+            reason=fill.side.value,
+            reason_code=fill.side.value,
+            metadata={"instrument_id": fill.instrument.instrument_id},
+        )
+        return next_position

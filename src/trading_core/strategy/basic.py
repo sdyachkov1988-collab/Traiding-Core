@@ -10,6 +10,7 @@ from trading_core.domain.context import Wave1MtfContext
 from trading_core.domain.orders import OrderSide
 from trading_core.domain.strategy import NoAction, StrategyIntent
 from trading_core.domain.timeframe import TimeframeContext
+from trading_core.observability import emit_structured_event
 
 
 @dataclass(slots=True)
@@ -45,60 +46,53 @@ class MtfBarAlignmentStrategy:
             trend_bar = context.trend_bar
 
         if not required_readiness:
-            return NoAction.create(
+            return self._log_no_action(
                 context_id=context.context_id,
                 reason="context_not_ready",
-                strategy_name=self.strategy_name,
             )
 
         if not closed_bar_only:
-            return NoAction.create(
+            return self._log_no_action(
                 context_id=context.context_id,
                 reason="closed_bar_only_required",
-                strategy_name=self.strategy_name,
             )
 
         if not no_lookahead_safe:
-            return NoAction.create(
+            return self._log_no_action(
                 context_id=context.context_id,
                 reason="lookahead_boundary_not_safe",
-                strategy_name=self.strategy_name,
             )
 
         if entry_bar is None or trend_bar is None:
-            return NoAction.create(
+            return self._log_no_action(
                 context_id=context.context_id,
                 reason="required_timeframe_missing",
-                strategy_name=self.strategy_name,
             )
 
         if entry_bar.open <= Decimal("0") or trend_bar.open <= Decimal("0"):
-            return NoAction.create(
+            return self._log_no_action(
                 context_id=context.context_id,
                 reason="non_positive_open",
-                strategy_name=self.strategy_name,
             )
 
         entry_body_ratio = abs(entry_bar.close - entry_bar.open) / entry_bar.open
         if entry_body_ratio < self.min_entry_body_ratio:
-            return NoAction.create(
+            return self._log_no_action(
                 context_id=context.context_id,
                 reason="entry_bar_body_too_small",
-                strategy_name=self.strategy_name,
             )
 
         entry_side = OrderSide.BUY if entry_bar.close > entry_bar.open else OrderSide.SELL
         trend_side = OrderSide.BUY if trend_bar.close > trend_bar.open else OrderSide.SELL
         if entry_side is not trend_side:
-            return NoAction.create(
+            return self._log_no_action(
                 context_id=context.context_id,
                 reason="timeframe_direction_mismatch",
-                strategy_name=self.strategy_name,
             )
 
         trend_body_ratio = abs(trend_bar.close - trend_bar.open) / trend_bar.open
         confidence = min(Decimal("1.0"), max(entry_body_ratio, trend_body_ratio))
-        return StrategyIntent.create(
+        intent = StrategyIntent.create(
             instrument=context.instrument,
             side=entry_side,
             thesis="mtf_alignment_continuation",
@@ -110,3 +104,42 @@ class MtfBarAlignmentStrategy:
                 "trend_timeframe": self.trend_timeframe,
             },
         )
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="strategy_intent",
+            entity_type="strategy_intent",
+            entity_id=intent.intent_id,
+            lineage_id=intent.context_id,
+            stage="strategy",
+            lifecycle_step="intent_emitted",
+            decision="emit_intent",
+            outcome="created",
+            reason=intent.thesis,
+            reason_code=intent.thesis,
+            metadata={
+                "strategy_name": intent.strategy_name,
+                "instrument_id": intent.instrument.instrument_id,
+            },
+        )
+        return intent
+
+    def _log_no_action(self, *, context_id: str, reason: str) -> NoAction:
+        result = NoAction.create(
+            context_id=context_id,
+            reason=reason,
+            strategy_name=self.strategy_name,
+        )
+        emit_structured_event(
+            logger_name=__name__,
+            event_type="strategy_intent",
+            entity_type="strategy_intent",
+            lineage_id=result.context_id,
+            stage="strategy",
+            lifecycle_step="no_action_emitted",
+            decision="no_action",
+            outcome="rejected",
+            reason=result.reason,
+            reason_code=result.reason,
+            metadata={"strategy_name": result.strategy_name},
+        )
+        return result
