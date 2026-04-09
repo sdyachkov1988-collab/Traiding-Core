@@ -77,6 +77,12 @@ The following modules are implemented and test-covered, but they are not part of
 
 These are implemented next-stage seams, not "missing code" and not mandatory Wave 1 behavior inside the Wave 1 active path. `ContextGate` now carries formal session/maintenance restriction handling, and the reconciliation coordinator exposes the full four-trigger Wave 2D request family.
 
+Pre-Wave3 note:
+
+- this layout should not be read as proof that Wave 3 hardening is already implemented;
+- it should also not be read as proof that all Wave 1 / Wave 2 contract boundaries are fully harmonized;
+- close routing remains an implemented Wave 2E seam with an explicit pre-harmonization contract gap in repo truth.
+
 ## Reserved areas
 
 The following remain outside current scope:

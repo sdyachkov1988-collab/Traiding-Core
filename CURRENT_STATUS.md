@@ -7,6 +7,12 @@ The repository now keeps two distinct truthful contours:
 - `Wave 1G` acceptance contour for `Minimal Core v1`
 - implemented next-stage seam set
 
+Pre-Wave3 reading rule:
+
+- Wave 3 hardening is not yet represented as an implemented layer in this repository;
+- governance remains outside the active core layer set;
+- unresolved contract ambiguities are kept explicit instead of being silently treated as fully closed.
+
 ### Wave 1G acceptance contour
 
 The following modules are part of the `Wave 1G` acceptance slice:
@@ -76,6 +82,12 @@ Operational meaning:
 - `2E` validates close-route instrument coherence before handoff to guard/execution
 
 These modules are implemented and usable, but they should still be read as next-stage seams rather than as the full Wave 1 scope definition from the source documents.
+
+## Known pre-Wave3 gaps
+
+- `MtfBarAlignmentStrategy` still exposes one exported surface across `Wave1MtfContext` and `TimeframeContext`; the repo does not claim that this is the final harmonized contract shape.
+- `Wave1MtfContextAssembler` currently sits on top of later timeframe-foundation internals; this remains a known pre-Wave3 limitation rather than a claim of perfect phase separation.
+- `CloseIntentRouter` is implemented as the Wave 2E seam, but the repo does not claim that the contract relationship between close routing and the broader decision-chain invariants is fully harmonized.
 
 ## Current acceptance baseline
 

@@ -1,4 +1,4 @@
-"""Interface contracts for Minimal Core v1 seams."""
+"""Interface contracts for the active Wave 1 contour plus implemented next-stage seams."""
 
 from trading_core.contracts.close_router import CloseIntentRouterProtocol
 from trading_core.contracts.coordinator import RecoveryCoordinatorProtocol

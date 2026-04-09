@@ -13,3 +13,8 @@ Current status:
 - `RecoveryCoordinator` is implemented as the Wave 2D reconciliation-loop seam;
 - the reconciliation loop formally supports `startup`, `periodic`, `on-error`, and `operator-command` trigger paths;
 - conflicting outcomes block new actions through formal recovery posture transitions rather than ad hoc flags.
+
+Pre-Wave3 note:
+
+- this implemented seam should not be read as a claim that governance decisions are already implemented;
+- reconcile outcomes and recovery posture remain core-side seam behavior before any later governance-layer reading.

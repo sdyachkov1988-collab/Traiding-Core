@@ -27,6 +27,12 @@ The repository keeps one active Wave 1 acceptance slice plus a set of implemente
 - `Wave 1G` acceptance uses the phase-scoped `Wave1MtfContext` seam and is exercised by [`tests/test_acceptance_wave1g_minimal_core.py`](C:\Users\Sergey\Desktop\Traiding Engine\tests\test_acceptance_wave1g_minimal_core.py)
 - next-stage modules such as `TimeframeContextAssembler`, `ContextGate`, `RecoveryCoordinator`, `UnknownStateClassifier`, and `CloseIntentRouter` are implemented and test-covered as separate seams
 
+## Pre-Wave3 Reading Rule
+
+- Wave 3 hardening is not started in this repository state;
+- governance remains an external policy-layer and is not implemented as an active core layer;
+- the repo still contains pre-Wave3 known gaps where documents do not yet justify a code-side harmonization pass.
+
 ## Acceptance And Implemented Seam Paths
 
 `Wave 1G` / `Minimal Core v1` acceptance path:
@@ -38,6 +44,12 @@ Important boundary:
 - `Wave 1G` acceptance stays on Wave 1 seams and the minimal MTF input seam
 - `TimeframeContext + ContextGate` remain in the repo as implemented next-stage seam modules, not as one active governance-owned runtime contour
 - `Wave1MtfContext` is explicit phase naming for the Wave 1 acceptance slice
+
+Known pre-Wave3 gaps:
+
+- the exported strategy surface still spans both the phase-scoped `Wave1MtfContext` and the later `TimeframeContext` family; this is left in place until documents allow a non-invented harmonization pass;
+- `Wave1MtfContextAssembler` currently reuses later timeframe foundation internals; the repo keeps this as an explicit pre-Wave3 limitation rather than claiming a fully separated phase surface;
+- close routing exists as a Wave 2E seam, but its precise contract reading relative to the broader decision-chain invariants is still treated as a known unresolved contract gap before harmonization/governance.
 
 ## Critical Fix Baseline
 

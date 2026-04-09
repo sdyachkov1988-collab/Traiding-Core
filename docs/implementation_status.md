@@ -8,6 +8,12 @@ The repository now contains three categories of code:
 - an implemented next-stage seam set that is phase-separate from the Wave 1 acceptance contour
 - reserved areas that remain outside current scope
 
+Pre-Wave3 interpretation:
+
+- this repository state is functional before Wave 3 hardening, not after it;
+- Wave 2 seams are present, but the repo does not claim full contract harmonization across all layers;
+- governance remains external to the active core layer set.
+
 ## Wave 1G acceptance contour
 
 The dedicated `Wave 1G` acceptance path is:
@@ -62,6 +68,12 @@ The following seams are implemented in the repository and covered by tests, but 
   extended reconciliation request / outcome / verdict family
 
 These seams are present in code and test-covered. They should be interpreted as implemented next-stage seams rather than as mandatory Wave 1 behavior.
+
+## Known pre-Wave3 gaps
+
+- the exported strategy surface still spans both the Wave 1 phase-scoped MTF context and the later `TimeframeContext` family;
+- the Wave 1 assembler currently reuses later timeframe-foundation internals;
+- close routing is present as a Wave 2E seam, but its exact contract reading against broader decision-chain invariants is left as an unresolved pre-harmonization gap.
 
 ## Reserved seams outside current scope
 
