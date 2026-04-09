@@ -6,8 +6,7 @@ Current test categories:
 - invariant tests from the guardrails document;
 - execution boundary tests with mock adapters;
 - dedicated `Wave 1G` acceptance slice tests for `Minimal Core v1` in `tests/test_acceptance_wave1g_minimal_core.py`;
-- next-stage runtime acceptance tests in `tests/test_next_stage_runtime_acceptance.py`;
 - Wave 2 seam tests for context, recovery, reconciliation loop, and close routing;
 - targeted regressions for the Wave 1 / Wave 2 critical-fix cases.
 
-Current suite status: `244 passed`
+Current suite status: `239 passed`

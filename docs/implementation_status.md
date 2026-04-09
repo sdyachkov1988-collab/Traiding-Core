@@ -5,7 +5,7 @@
 The repository now contains three categories of code:
 
 - a dedicated `Wave 1G` acceptance contour for `Minimal Core v1`
-- an implemented next-stage runtime contour that is phase-separate from the Wave 1 acceptance contour
+- an implemented next-stage seam set that is phase-separate from the Wave 1 acceptance contour
 - reserved areas that remain outside current scope
 
 ## Wave 1G acceptance contour
@@ -21,24 +21,20 @@ Meaning:
 - the acceptance path is exercised by `tests/test_acceptance_wave1g_minimal_core.py`
 - execution-to-fill normalization inside this slice is owned by `ExecutionHandoff`, not by adapter-specific helpers
 
-## Implemented next-stage runtime contour
-
-The implemented next-stage runtime path currently exercised by the repository is:
-
-`TimeframeSyncEvent -> TimeframeContext -> ContextGate -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
+## Implemented next-stage seams
 
 Meaning:
 
-- the active path no longer uses the legacy single-bar strategy
-- the strategy receives `entry timeframe + mandatory HTF input` through the formal context seam
-- the runtime path now includes `ContextGate` before strategy evaluation
+- the next-stage seam family no longer depends on a separate legacy single-bar strategy contour
+- the strategy-related seam receives `entry timeframe + mandatory HTF input` through the formal context seam
+- `ContextGate` exists as a separate next-stage gate seam
 - fill identity is handled separately from order identity inside the fill processor and execution-to-fill handoff
 
 Naming split:
 
 - `Wave1MtfContext` remains as earlier phase-scoped / legacy naming for the Wave 1 acceptance slice
-- runtime-labelled next-stage tests use `TimeframeContext + ContextGate`
-- Wave 1 scope remains `Minimal Core v1`; the docs split here is about honest contour labeling, not about adding governance or Wave 3 work
+- `TimeframeContext + ContextGate` remain implemented as next-stage seams
+- Wave 1 scope remains `Minimal Core v1`; this does not add governance or Wave 3 runtime ownership
 
 ## Wave 1 boundary ownership
 
@@ -88,7 +84,7 @@ The repository reflects the completed remediation work from the Wave 1 / Wave 2 
 - zero-quantity zombie positions are removed from portfolio truth
 - builder and close-builder use real step-multiple alignment instead of `quantize` shortcuts
 - Package E owns the execution-to-fill handoff through `ExecutionHandoff`
-- fill idempotency covers fallback replay, restart restore bridge, and mixed-source replay
+- fill identity handling remains explicit inside the fill processor and persisted checkpoint path
 - context/data integrity includes history-depth warmup, temporal alignment, monotonic timeframe updates, `source_event_time -> event_time`, early readiness guarding, malformed-context rejection, and gap recovery after contiguous updates resume
 - context gate includes formal session restriction and maintenance restriction branches with domain-level reasons
 - startup reconciliation no longer hides shared-instrument mismatch after zero-quantity pruning
@@ -115,7 +111,7 @@ Interpretation:
 ## Practical reading rule
 
 - `tests/test_acceptance_wave1g_minimal_core.py` is the truthful `Wave 1G` acceptance slice
-- `tests/test_next_stage_runtime_acceptance.py` is the truthful next-stage runtime slice
+- next-stage seam tests live in the package-level `2A-2E` test files rather than in one active runtime contour file
 - `Wave1MtfContext` naming is retained as legacy phase wording for the Wave 1 acceptance seam
 - source `docs/spec/` remain the roadmap authority; this file is the repo truth snapshot
 
@@ -130,7 +126,7 @@ Interpretation:
 
 ## Current test status
 
-- full suite: `244 passed`
+- full suite: `239 passed`
 - the suite includes targeted regressions for the Wave 1 / Wave 2 critical-fix cases
 
 - [`CURRENT_STATUS.md`](C:\Users\Sergey\Desktop\Traiding Engine\CURRENT_STATUS.md) is the quickest status map

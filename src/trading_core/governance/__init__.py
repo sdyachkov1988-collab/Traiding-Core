@@ -1,6 +1,4 @@
-"""External policy-layer seams."""
+"""Reserved external policy-layer seam."""
 
-from trading_core.governance.runtime import ActiveRuntimeContour, RuntimeCycleResult
-
-__all__ = ["ActiveRuntimeContour", "RuntimeCycleResult"]
+__all__: list[str] = []
 

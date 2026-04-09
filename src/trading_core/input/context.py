@@ -8,36 +8,9 @@ from decimal import Decimal, InvalidOperation
 from trading_core.context.policies import parent_period_start, timeframe_to_seconds
 from trading_core.context.store import InstrumentTimeframeStore
 from trading_core.domain.common import InstrumentRef
-from trading_core.domain.context import MarketContext, Wave1MtfContext
+from trading_core.domain.context import Wave1MtfContext
 from trading_core.domain.events import EventKind, MarketEvent
 from trading_core.domain.timeframe import ClosedBar, TimeframeSyncEvent
-
-
-@dataclass(slots=True)
-class SimpleMarketContextAssembler:
-    """Build the phase-scoped market context from normalized events."""
-
-    entry_timeframe: str = "15m"
-    timeframe_set: tuple[str, ...] = ("15m",)
-    alignment_policy: str = "closed-bars-only"
-
-    def assemble(self, event: MarketEvent) -> MarketContext:
-        """Return a minimal strategy-facing context for the next seam."""
-
-        readiness_flags = {
-            "event_received": True,
-            "entry_ready": event.event_kind == "bar",
-            "context_ready": True,
-        }
-        return MarketContext.create(
-            instrument=event.instrument,
-            entry_timeframe=self.entry_timeframe,
-            timeframe_set=self.timeframe_set,
-            latest_event=event,
-            readiness_flags=readiness_flags,
-            alignment_policy=self.alignment_policy,
-            metadata={"source_event_id": event.event_id},
-        )
 
 
 @dataclass(slots=True)

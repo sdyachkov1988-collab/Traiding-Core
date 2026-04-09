@@ -1,18 +1,18 @@
 # Trading Core Spec Index
 
-Этот каталог переводит исходный комплект `.docx` в рабочую Markdown-спецификацию для реализации `Minimal Core v1`.
+Этот каталог переводит исходный комплект `.docx` в полнотекстовую Markdown-спецификацию для реализации `Minimal Core v1`.
 
 Цель этого слоя:
 
-- дать единую точку входа вместо чтения восьми документов вручную;
-- зафиксировать порядок чтения и зависимости между документами;
-- подготовить базу для следующих шагов: архитектурный каркас, доменные модели, интерфейсы и implementation packages.
+- дать единую точку входа вместо чтения восьми `.docx` вручную;
+- сохранить содержимое документов в текстовом формате, удобном для чтения и работы в репозитории;
+- зафиксировать порядок чтения и зависимости между документами.
 
 Важно:
 
-- это не дословная перепечатка исходных документов;
-- это рабочий конспект и карта решений для разработки;
-- в случае конфликта источником истины остаются исходные `.docx`.
+- файлы в этом каталоге являются полнотекстовым переносом исходных `.docx` в `.md`;
+- цель этого слоя — сохранить текст документов без summary и без смыслового сокращения;
+- в случае сомнений по форматированию или структуре приоритет остается у исходных `.docx`.
 
 ## Источники
 
@@ -27,14 +27,14 @@
 
 ## Порядок чтения
 
-1. [01_architectural_roadmap.md](./01_architectural_roadmap.md)
-2. [02_technical_roadmap.md](./02_technical_roadmap.md)
-3. [03_engineering_guardrails.md](./03_engineering_guardrails.md)
-4. [04_trading_domain_model.md](./04_trading_domain_model.md)
-5. [05_core_contracts.md](./05_core_contracts.md)
-6. [06_trading_governance.md](./06_trading_governance.md)
-7. [07_interface_contracts_minimal_core_v1.md](./07_interface_contracts_minimal_core_v1.md)
-8. [08_implementation_packages_codex_workset.md](./08_implementation_packages_codex_workset.md)
+1. [roadmap_torgovogo_yadra_v1_7_arch_final_polish_fixed-1.md](./roadmap_torgovogo_yadra_v1_7_arch_final_polish_fixed-1.md)
+2. [technical_roadmap_trading_core_v0_9.md](./technical_roadmap_trading_core_v0_9.md)
+3. [engineering_guardrails_core_v1_v0_8.md](./engineering_guardrails_core_v1_v0_8.md)
+4. [Trading_Domain_Model_v0_5-2.md](./Trading_Domain_Model_v0_5-2.md)
+5. [core_contracts_canonical_core_model_v0_1.md](./core_contracts_canonical_core_model_v0_1.md)
+6. [Trading_Governance_v0_1_final.md](./Trading_Governance_v0_1_final.md)
+7. [Interface_Contracts_Minimal_Core_v1_v0_1.md](./Interface_Contracts_Minimal_Core_v1_v0_1.md)
+8. [Implementation_Packages_Codex_workset_v0_1.md](./Implementation_Packages_Codex_workset_v0_1.md)
 
 ## Логика комплекта
 

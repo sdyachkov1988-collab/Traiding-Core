@@ -9,7 +9,6 @@ import pytest
 from trading_core.domain import (
     EventKind,
     InstrumentRef,
-    MarketContext,
     MarketEvent,
     OrderIntent,
     OrderSide,
@@ -18,6 +17,7 @@ from trading_core.domain import (
     RiskVerdict,
     StrategyIntent,
     TimeInForce,
+    Wave1MtfContext,
 )
 
 
@@ -35,26 +35,20 @@ def test_market_event_create_produces_timezone_aware_values() -> None:
     assert event.observed_at.tzinfo == timezone.utc
 
 
-def test_market_context_create_keeps_phase_scoped_shape() -> None:
+def test_wave1_mtf_context_create_keeps_phase_scoped_shape() -> None:
     instrument = InstrumentRef(instrument_id="btc-usdt", symbol="BTCUSDT", venue="binance")
-    event = MarketEvent.create(
-        instrument=instrument,
-        event_kind=EventKind.BAR,
-        payload={"timeframe": "1m"},
-        source="test-feed",
-    )
-
-    context = MarketContext.create(
+    context = Wave1MtfContext.create(
         instrument=instrument,
         entry_timeframe="15m",
-        timeframe_set=("15m", "1h"),
-        latest_event=event,
-        readiness_flags={"entry_ready": True, "htf_ready": True},
-        alignment_policy="closed-bars-only",
+        trend_timeframe="1h",
+        entry_bar=None,
+        trend_bar=None,
+        closed_bar_only=True,
+        no_lookahead_safe=True,
+        readiness_flags={"entry_ready": True, "trend_ready": True, "context_ready": True},
     )
 
-    assert context.context_id.startswith("ctx_")
-    assert context.latest_event is event
+    assert context.context_id.startswith("ctx1mtf_")
     assert context.readiness_flags["entry_ready"] is True
 
 
@@ -96,7 +90,7 @@ def test_strategy_risk_order_chain_has_distinct_entities() -> None:
 
 def test_core_entities_are_dataclasses() -> None:
     assert is_dataclass(MarketEvent)
-    assert is_dataclass(MarketContext)
+    assert is_dataclass(Wave1MtfContext)
     assert is_dataclass(StrategyIntent)
     assert is_dataclass(RiskDecision)
     assert is_dataclass(OrderIntent)

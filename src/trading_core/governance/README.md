@@ -6,4 +6,8 @@ Purpose:
 - keep policy decisions distinct from risk verdicts and execution checks;
 - avoid premature coupling into `Minimal Core v1`.
 
-This package remains intentionally thin at this stage.
+Current state:
+
+- no active runtime orchestration surface lives here;
+- no policy runtime wrapper is exported from this package;
+- the package remains reserved until the documented governance layer is in scope.

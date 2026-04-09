@@ -9,12 +9,7 @@ from trading_core.context import InstrumentTimeframeStore
 from trading_core.domain import ClosedBar, EventKind, TimeframeSyncEvent
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.common import utc_now
-from trading_core.input import (
-    DictEventNormalizer,
-    RawMarketEvent,
-    SimpleMarketContextAssembler,
-    Wave1MtfContextAssembler,
-)
+from trading_core.input import DictEventNormalizer, RawMarketEvent, Wave1MtfContextAssembler
 
 
 def test_dict_event_normalizer_converts_mapping_into_market_event() -> None:
@@ -92,33 +87,6 @@ def test_dict_event_normalizer_rejects_missing_required_keys() -> None:
                 "payload": {"close": "65000"},
             }
         )
-
-
-def test_simple_market_context_assembler_builds_phase_scoped_context() -> None:
-    normalizer = DictEventNormalizer()
-    assembler = SimpleMarketContextAssembler(
-        entry_timeframe="15m",
-        timeframe_set=("15m", "1h"),
-        alignment_policy="closed-bars-only",
-    )
-
-    event = normalizer.normalize(
-        {
-            "instrument_id": "btc-usdt",
-            "symbol": "BTCUSDT",
-            "venue": "binance",
-            "event_kind": "bar",
-            "source": "test-feed",
-            "payload": {"timeframe": "15m", "close": "65000"},
-        }
-    )
-    context = assembler.assemble(event)
-
-    assert context.instrument.symbol == "BTCUSDT"
-    assert context.entry_timeframe == "15m"
-    assert context.timeframe_set == ("15m", "1h")
-    assert context.readiness_flags["entry_ready"] is True
-    assert context.metadata["source_event_id"] == event.event_id
 
 
 def test_wave1_mtf_context_assembler_builds_context_from_normalized_bar_event() -> None:

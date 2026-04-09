@@ -11,5 +11,4 @@ ARCHITECTURE_LAYERS = (
     "portfolio",
     "state",
     "reconciliation",
-    "governance",
 )

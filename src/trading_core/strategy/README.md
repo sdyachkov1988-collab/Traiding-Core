@@ -11,4 +11,4 @@ Responsibilities:
 Current status:
 
 - `MtfBarAlignmentStrategy` is the active Wave 1 strategy seam;
-- `BarDirectionStrategy` remains available as reference-only legacy behavior.
+- no separate legacy strategy contour is exported from this package.

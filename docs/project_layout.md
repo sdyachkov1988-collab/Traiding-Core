@@ -1,6 +1,6 @@
 # Project Layout
 
-This repository is organized around seam ownership, not around exchange adapters or deployment layers. The layout reflects both the dedicated `Wave 1G` acceptance contour and the implemented next-stage seams that already exist in the codebase.
+This repository is organized around seam ownership, not around exchange adapters or deployment layers. The layout reflects the dedicated `Wave 1G` acceptance contour plus the implemented next-stage seams that already exist in the codebase.
 
 ## Top-level structure
 
@@ -10,7 +10,7 @@ This repository is organized around seam ownership, not around exchange adapters
 - `src/trading_core/domain/` - canonical domain meaning and identity
 - `src/trading_core/contracts/` - interface seams between packages
 - `src/trading_core/input/` - normalized input and early context assembly
-- `src/trading_core/strategy/` - strategy seam, including legacy single-bar and Wave 1 MTF reference strategies
+- `src/trading_core/strategy/` - strategy seam centered on the Wave 1 MTF strategy path
 - `src/trading_core/risk/` - risk verdict seam
 - `src/trading_core/execution/` - order builder, guard, execution adapter, fill intake
 - `src/trading_core/positions/` - fill-driven position truth and close routing
@@ -22,7 +22,7 @@ This repository is organized around seam ownership, not around exchange adapters
 - `src/trading_core/governance/` - reserved governance/policy seam
 - `tests/` - package, regression, and acceptance coverage
 
-## Acceptance and runtime contours
+## Acceptance contour and next-stage seams
 
 `Wave 1G` acceptance currently uses:
 
@@ -41,7 +41,7 @@ This repository is organized around seam ownership, not around exchange adapters
 
 This is the truthful `Wave 1G` acceptance contour for `Minimal Core v1`.
 
-Implemented next-stage runtime currently uses:
+Implemented next-stage seams currently include:
 
 - `src/trading_core/context/`
   with `TimeframeContextAssembler`, `ContextGate`, and their supporting policies
@@ -56,13 +56,13 @@ Implemented next-stage runtime currently uses:
 - `src/trading_core/state/`
 - `src/trading_core/reconciliation/startup.py`
 
-This is the truthful next-stage runtime contour already present in the repository.
+These are implemented next-stage seams already present in the repository.
 
 Naming split:
 
 - `Wave1MtfContextAssembler` remains in the repository as the phase-scoped Wave 1 acceptance seam
 - `TimeframeContext + ContextGate` are part of the implemented next-stage runtime seam family
-- the status docs distinguish these two contours so `Wave 1G` no longer mislabels the next stage
+- the status docs distinguish the active Wave 1 contour from the separate next-stage seam family
 
 ## Implemented Wave 2 seams
 

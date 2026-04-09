@@ -13,11 +13,8 @@ from trading_core.domain import (
     SystemMode,
     UnknownStateKind,
 )
-from trading_core.governance import ActiveRuntimeContour
 from trading_core.reconciliation import RecoveryCoordinator, SourceOfTruthPolicy
 from trading_core.recovery import UnknownStateClassifier
-from trading_core.context.gate import ContextGate
-from trading_core.context.policies import FreshnessPolicy
 from trading_core.contracts.coordinator import RecoveryCoordinatorProtocol
 
 
@@ -26,18 +23,6 @@ def _request_operator_from_protocol_surface(
     instrument_id: str | None = None,
 ) -> ReconciliationRequest:
     return coordinator.request_operator_reconciliation(instrument_id)
-
-
-@dataclass
-class RuntimeContourContextStub:
-    def assemble(self):
-        return None
-
-
-@dataclass
-class RuntimeContourStrategyStub:
-    def evaluate(self, context):
-        raise AssertionError("strategy_should_not_be_called_in_runtime_surface_test")
 
 
 def test_reconciliation_request_create_builds_startup_request() -> None:
@@ -146,65 +131,6 @@ def test_recovery_coordinator_protocol_surface_carries_operator_command_request(
     assert request.mode == ReconciliationMode.ON_ERROR
     assert request.trigger == ReconciliationTrigger.OPERATOR_COMMAND
     assert request.instrument_id == "btc-usdt"
-
-
-def test_active_runtime_contour_exposes_operator_command_request_surface() -> None:
-    classifier = UnknownStateClassifier()
-    coordinator = RecoveryCoordinator(
-        source_of_truth=SourceOfTruthPolicy(),
-        classifier=classifier,
-    )
-    runtime = ActiveRuntimeContour(
-        context_provider=RuntimeContourContextStub(),
-        gate=ContextGate(
-            warmup_bars=1,
-            freshness_policy=FreshnessPolicy(max_age_seconds=300),
-            required_timeframes=("15m", "1h"),
-        ),
-        strategy=RuntimeContourStrategyStub(),
-        classifier=classifier,
-        recovery_coordinator=coordinator,
-    )
-
-    request = runtime.request_operator_reconciliation("btc-usdt")
-
-    assert request.mode == ReconciliationMode.ON_ERROR
-    assert request.trigger == ReconciliationTrigger.OPERATOR_COMMAND
-    assert request.instrument_id == "btc-usdt"
-
-
-def test_active_runtime_contour_reads_all_four_reconciliation_triggers_as_one_family() -> None:
-    classifier = UnknownStateClassifier()
-    coordinator = RecoveryCoordinator(
-        source_of_truth=SourceOfTruthPolicy(),
-        classifier=classifier,
-    )
-    runtime = ActiveRuntimeContour(
-        context_provider=RuntimeContourContextStub(),
-        gate=ContextGate(
-            warmup_bars=1,
-            freshness_policy=FreshnessPolicy(max_age_seconds=300),
-            required_timeframes=("15m", "1h"),
-        ),
-        strategy=RuntimeContourStrategyStub(),
-        classifier=classifier,
-        recovery_coordinator=coordinator,
-    )
-
-    requests = (
-        runtime.request_startup_reconciliation("btc-usdt"),
-        runtime.request_periodic_reconciliation("btc-usdt"),
-        runtime.request_on_error_reconciliation("btc-usdt"),
-        runtime.request_operator_reconciliation("btc-usdt"),
-    )
-
-    assert [request.trigger for request in requests] == [
-        ReconciliationTrigger.SYSTEM_START,
-        ReconciliationTrigger.SCHEDULER,
-        ReconciliationTrigger.ERROR_SIGNAL,
-        ReconciliationTrigger.OPERATOR_COMMAND,
-    ]
-    assert all(isinstance(request, ReconciliationRequest) for request in requests)
 
 
 def test_recovery_coordinator_unifies_request_creation_across_all_four_triggers() -> None:

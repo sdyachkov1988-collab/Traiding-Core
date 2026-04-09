@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "trading-core"
 version = "0.1.0"
-description = "Minimal Core v1 trading core skeleton"
+description = "Minimal Core v1 trading core with documented next-stage seam modules"
 requires-python = ">=3.11"
 
 [tool.setuptools]

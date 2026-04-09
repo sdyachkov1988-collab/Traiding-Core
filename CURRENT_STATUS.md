@@ -5,7 +5,7 @@
 The repository now keeps two distinct truthful contours:
 
 - `Wave 1G` acceptance contour for `Minimal Core v1`
-- implemented next-stage runtime contour
+- implemented next-stage seam set
 
 ### Wave 1G acceptance contour
 
@@ -32,9 +32,9 @@ Primary acceptance file:
 
 - `tests/test_acceptance_wave1g_minimal_core.py`
 
-### Implemented next-stage runtime contour
+### Implemented next-stage seams
 
-The following modules are part of the working next-stage runtime contour in the repository:
+The following modules are implemented in the repository as separate next-stage seams:
 
 - `src/trading_core/context/`
   `TimeframeContextAssembler`, `ContextGate`, `BarAlignmentPolicy`, `ClosedBarPolicy`, `FreshnessPolicy`
@@ -49,20 +49,12 @@ The following modules are part of the working next-stage runtime contour in the 
 - `src/trading_core/state/`
 - `src/trading_core/reconciliation/startup.py`
 
-Active runtime path:
-
-`TimeframeSyncEvent -> TimeframeContext -> ContextGate -> MtfBarAlignmentStrategy -> StrategyIntent -> RiskDecision -> OrderIntent -> GuardOutcome -> AdmittedOrder -> ExecutionReport -> Fill -> Position -> PortfolioState -> PersistedStateSnapshot -> StartupReconciliationResult`
-
-Primary runtime-labelled file:
-
-- `tests/test_next_stage_runtime_acceptance.py`
-
 Naming note:
 
 - `Wave1MtfContext` / `Wave1MtfContextAssembler` remain in the repository as earlier phase-scoped naming
 - `Wave 1G` acceptance does not depend on `TimeframeContext + ContextGate`
-- formal `TimeframeContext + ContextGate` belong to the implemented next-stage runtime contour
-- this split does not promote governance-layer or Wave 3 behavior into the contour; it only keeps the repo map honest
+- formal `TimeframeContext + ContextGate` belong to the implemented next-stage seam family
+- this split does not promote governance-layer or Wave 3 behavior into the active contour
 
 ## Implemented - Wave 2 seams present in the repository
 
@@ -102,7 +94,7 @@ The repository includes the Wave 1 and Wave 2 critical fixes from the remediatio
 - monotonic `SAFE_MODE` / `FROZEN` posture handling
 - unified four-trigger Wave 2D reconciliation request capability
 
-Current test status: `244 passed`
+Current test status: `239 passed`
 
 ## Reserved - outside current scope
 

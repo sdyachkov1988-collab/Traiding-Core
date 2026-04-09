@@ -26,19 +26,46 @@ from trading_core.execution import (
     SimpleOrderIntentBuilder,
     SimplePreExecutionGuard,
 )
-from trading_core.input import DictEventNormalizer, SimpleMarketContextAssembler
+from trading_core.input import DictEventNormalizer, Wave1MtfContextAssembler
 from trading_core.risk import ConfidenceCapRiskEvaluator
-from trading_core.strategy import BarDirectionStrategy
+from trading_core.strategy import MtfBarAlignmentStrategy
+from trading_core.context import InstrumentTimeframeStore
+from trading_core.domain import ClosedBar, TimeframeSyncEvent
+from trading_core.domain.common import utc_now
 
 
 def build_admitted_order() -> AdmittedOrder:
     normalizer = DictEventNormalizer()
-    assembler = SimpleMarketContextAssembler(
-        entry_timeframe="15m",
-        timeframe_set=("15m", "1h"),
-        alignment_policy="closed-bars-only",
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
     )
-    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.001"))
+    store = InstrumentTimeframeStore("btc-usdt")
+    trend_bar_time = utc_now().replace(minute=0, second=0, microsecond=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=ClosedBar(
+                timeframe="1h",
+                open=Decimal("100"),
+                high=Decimal("106"),
+                low=Decimal("95"),
+                close=Decimal("105"),
+                volume=Decimal("12"),
+                bar_time=trend_bar_time,
+                is_closed=True,
+            ),
+        )
+    )
+    assembler = Wave1MtfContextAssembler(
+        instrument=instrument,
+        store=store,
+        entry_timeframe="15m",
+        trend_timeframe="1h",
+    )
+    strategy = MtfBarAlignmentStrategy(min_entry_body_ratio=Decimal("0.001"))
     risk = ConfidenceCapRiskEvaluator(min_confidence=Decimal("0.01"))
     builder = SimpleOrderIntentBuilder()
     guard = SimplePreExecutionGuard()
@@ -50,7 +77,14 @@ def build_admitted_order() -> AdmittedOrder:
             "venue": "binance",
             "event_kind": "bar",
             "source": "test-feed",
-            "payload": {"timeframe": "15m", "open": "100", "close": "105"},
+            "payload": {
+                "timeframe": "15m",
+                "open": "100",
+                "high": "106",
+                "low": "99",
+                "close": "105",
+                "volume": "10",
+            },
         }
     )
     context = assembler.assemble(event)

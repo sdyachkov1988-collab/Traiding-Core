@@ -2,7 +2,7 @@
 
 from trading_core.domain.common import InstrumentRef
 from trading_core.domain.close_intent import CloseIntent, CloseRoutingResult, CloseRoutingVerdict
-from trading_core.domain.context import MarketContext, Wave1MtfContext
+from trading_core.domain.context import Wave1MtfContext
 from trading_core.domain.execution import AdmittedOrder, ExecutionReport, ExecutionReportKind
 from trading_core.domain.events import EventKind, MarketEvent
 from trading_core.domain.fills import Fill
@@ -64,7 +64,6 @@ __all__ = [
     "InstrumentRef",
     "InstrumentRiskBasis",
     "InstrumentExecutionSpec",
-    "MarketContext",
     "MarketEvent",
     "NoAction",
     "OrderIntent",

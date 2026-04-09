@@ -14,19 +14,40 @@ from trading_core.domain import ClosedBar, TimeframeContext, TimeframeSyncEvent
 from trading_core.domain.common import InstrumentRef, utc_now
 from trading_core.domain import OrderSide
 from trading_core.domain.strategy import NoAction, StrategyIntent
-from trading_core.input import (
-    DictEventNormalizer,
-    SimpleMarketContextAssembler,
-)
-from trading_core.strategy import BarDirectionStrategy, MtfBarAlignmentStrategy
+from trading_core.input import DictEventNormalizer, Wave1MtfContextAssembler
+from trading_core.strategy import MtfBarAlignmentStrategy
 
 
-def build_context(*, open_value: str, close_value: str):
+def build_wave1_context(*, open_value: str, close_value: str):
     normalizer = DictEventNormalizer()
-    assembler = SimpleMarketContextAssembler(
+    instrument = InstrumentRef(
+        instrument_id="btc-usdt",
+        symbol="BTCUSDT",
+        venue="binance",
+    )
+    store = InstrumentTimeframeStore("btc-usdt")
+    trend_bar_time = utc_now().replace(minute=0, second=0, microsecond=0)
+    store.update(
+        TimeframeSyncEvent.create(
+            instrument_id="btc-usdt",
+            timeframe="1h",
+            bar=ClosedBar(
+                timeframe="1h",
+                open=Decimal("100"),
+                high=Decimal("110"),
+                low=Decimal("95"),
+                close=Decimal(close_value),
+                volume=Decimal("12"),
+                bar_time=trend_bar_time,
+                is_closed=True,
+            ),
+        )
+    )
+    assembler = Wave1MtfContextAssembler(
+        instrument=instrument,
+        store=store,
         entry_timeframe="15m",
-        timeframe_set=("15m", "1h"),
-        alignment_policy="closed-bars-only",
+        trend_timeframe="1h",
     )
     event = normalizer.normalize(
         {
@@ -38,27 +59,30 @@ def build_context(*, open_value: str, close_value: str):
             "payload": {
                 "timeframe": "15m",
                 "open": open_value,
+                "high": "106",
+                "low": "95",
                 "close": close_value,
+                "volume": "10",
             },
         }
     )
     return assembler.assemble(event)
 
 
-def test_bar_direction_strategy_returns_buy_intent_for_green_bar() -> None:
-    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.001"))
-    context = build_context(open_value="100", close_value="102")
+def test_mtf_bar_alignment_strategy_returns_buy_intent_for_green_aligned_bars() -> None:
+    strategy = MtfBarAlignmentStrategy(min_entry_body_ratio=Decimal("0.001"))
+    context = build_wave1_context(open_value="100", close_value="102")
 
     result = strategy.evaluate(context)
 
     assert isinstance(result, StrategyIntent)
     assert result.side == OrderSide.BUY
-    assert result.strategy_name == "bar_direction"
+    assert result.strategy_name == "mtf_bar_alignment"
 
 
-def test_bar_direction_strategy_returns_sell_intent_for_red_bar() -> None:
-    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.001"))
-    context = build_context(open_value="100", close_value="98")
+def test_mtf_bar_alignment_strategy_returns_sell_intent_for_red_aligned_bars() -> None:
+    strategy = MtfBarAlignmentStrategy(min_entry_body_ratio=Decimal("0.001"))
+    context = build_wave1_context(open_value="100", close_value="98")
 
     result = strategy.evaluate(context)
 
@@ -66,45 +90,23 @@ def test_bar_direction_strategy_returns_sell_intent_for_red_bar() -> None:
     assert result.side == OrderSide.SELL
 
 
-def test_bar_direction_strategy_returns_no_action_for_small_bar_body() -> None:
-    strategy = BarDirectionStrategy(min_body_ratio=Decimal("0.01"))
-    context = build_context(open_value="100", close_value="100.2")
+def test_mtf_bar_alignment_strategy_returns_no_action_for_small_entry_bar_body() -> None:
+    strategy = MtfBarAlignmentStrategy(min_entry_body_ratio=Decimal("0.01"))
+    context = build_wave1_context(open_value="100", close_value="100.2")
 
     result = strategy.evaluate(context)
 
     assert isinstance(result, NoAction)
-    assert result.reason == "bar_body_too_small"
+    assert result.reason == "entry_bar_body_too_small"
 
 
-def test_bar_direction_strategy_returns_no_action_for_missing_values() -> None:
-    normalizer = DictEventNormalizer()
-    assembler = SimpleMarketContextAssembler()
-    strategy = BarDirectionStrategy()
-
-    event = normalizer.normalize(
-        {
-            "instrument_id": "btc-usdt",
-            "symbol": "BTCUSDT",
-            "venue": "binance",
-            "event_kind": "bar",
-            "source": "test-feed",
-            "payload": {"timeframe": "15m", "close": "100"},
-        }
-    )
-    context = assembler.assemble(event)
-    result = strategy.evaluate(context)
-
-    assert isinstance(result, NoAction)
-    assert result.reason == "missing_open_or_close"
-
-
-def test_bar_direction_strategy_returns_no_action_when_context_not_ready() -> None:
-    strategy = BarDirectionStrategy()
-    context = build_context(open_value="100", close_value="102")
+def test_mtf_bar_alignment_strategy_returns_no_action_when_context_not_ready() -> None:
+    strategy = MtfBarAlignmentStrategy()
+    context = build_wave1_context(open_value="100", close_value="102")
     object.__setattr__(
         context,
         "readiness_flags",
-        {"event_received": True, "entry_ready": False, "context_ready": False},
+        {"event_received": True, "entry_ready": False, "trend_ready": True, "context_ready": False},
     )
 
     result = strategy.evaluate(context)
