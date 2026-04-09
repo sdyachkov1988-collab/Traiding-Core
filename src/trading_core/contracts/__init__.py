@@ -7,7 +7,7 @@ from trading_core.contracts.execution import ExecutionAdapter, ExecutionSubmitte
 from trading_core.contracts.fills import FillProcessor, PortfolioEngine, PositionEngine
 from trading_core.contracts.gate import ContextGateProtocol
 from trading_core.contracts.guards import PreExecutionGuard
-from trading_core.contracts.input import EventNormalizer, MarketContextAssembler
+from trading_core.contracts.input import EventNormalizer, Wave1MtfContextAssembler
 from trading_core.contracts.orders import OrderIntentBuilder
 from trading_core.contracts.reconciliation import StartupReconciler
 from trading_core.contracts.recovery import UnknownStateClassifierProtocol
@@ -23,7 +23,7 @@ __all__ = [
     "ExecutionSubmitter",
     "EventNormalizer",
     "FillProcessor",
-    "MarketContextAssembler",
+    "Wave1MtfContextAssembler",
     "OrderIntentBuilder",
     "PortfolioEngine",
     "PreExecutionGuard",

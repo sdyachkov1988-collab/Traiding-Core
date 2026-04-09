@@ -15,8 +15,8 @@ class EventNormalizer(Protocol):
         """Return a normalized market event without strategy interpretation."""
 
 
-class MarketContextAssembler(Protocol):
-    """Build the early strategy-facing context from normalized events."""
+class Wave1MtfContextAssembler(Protocol):
+    """Build the phase-scoped Wave 1 MTF context from normalized events."""
 
     def assemble(self, event: MarketEvent) -> Wave1MtfContext:
-        """Return the phase-scoped market context for Package A."""
+        """Return the phase-scoped Wave 1 MTF context for Package A."""
